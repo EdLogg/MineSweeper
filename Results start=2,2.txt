@@ -1,0 +1,61 @@
+starting at (2,2)
+guess1Offset=-0.02
+endPlayCount=30
+---------------
+Samples: 100000
+Wins: 46438
+Percent: 46.44%
+Deviation: 0.15%
+Guess1 Used: 82440
+Guess2 Used: 156736
+Guess1 Failed: 19.0%
+Guess2 Failed: 24.2%
+Average guess per win: 1.87
+Average guess per loss: 2.81
+Average win prob: 70.54
+Average loss prob: 56.24
+Average guess1 prob: 83.75
+Average guess2 prob: 77.70
+Wins with guesses:
+     0     1     2     3     4     5     6     7     8+
+ 15709 10385  6812  4646  3135  2092  1334   887  1438
+ 15.7% 10.4%  6.8%  4.6%  3.1%  2.1%  1.3%  0.9%  1.4%
+
+---------------
+Samples: 100000
+Wins: 87642
+Percent: 87.64%
+Deviation: 0.10%
+Guess1 Used: 13961
+Guess2 Used: 30282
+Guess1 Failed: 13.8%
+Guess2 Failed: 34.4%
+Average guess per win: 0.29
+Average guess per loss: 1.50
+Average win prob: 93.69
+Average loss prob: 57.36
+Average guess1 prob: 88.51
+Average guess2 prob: 66.72
+Wins with guesses:
+     0     1     2     3     4     5     6     7     8+
+ 71785 10309  3137  1336   627   246   122    40    40
+ 71.8% 10.3%  3.1%  1.3%  0.6%  0.2%  0.1%  0.0%  0.0%
+---------------
+Samples: 100000
+Wins: 96981
+Percent: 96.98%
+Deviation: 0.05%
+Guess1 Used: 3612
+Guess2 Used: 6396
+Guess1 Failed: 8.9%
+Guess2 Failed: 42.2%
+Average guess per win: 0.07
+Average guess per loss: 1.12
+Average win prob: 98.44
+Average loss prob: 56.17
+Average guess1 prob: 94.33
+Average guess2 prob: 57.97
+Wins with guesses:
+     0     1     2     3     4     5     6     7     8+
+ 91835  4084   744   234    69    12     3     0     0
+ 91.8%  4.1%  0.7%  0.2%  0.1%  0.0%  0.0%  0.0%  0.0%
