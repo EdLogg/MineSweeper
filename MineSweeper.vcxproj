@@ -145,8 +145,10 @@
     <ClInclude Include="targetver.h" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="fastSolve.cpp" />
     <ClCompile Include="file.cpp" />
     <ClCompile Include="game.cpp" />
+    <ClCompile Include="hash.cpp" />
     <ClCompile Include="MineSweeper.cpp" />
     <ClCompile Include="rand.cpp" />
     <ClCompile Include="stdafx.cpp">

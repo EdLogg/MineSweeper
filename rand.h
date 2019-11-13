@@ -19,4 +19,6 @@ typedef unsigned long long	U64;
 
 void RandomInit();
 void RandomSeed(U64 seed);
+void RandomSeed2(U64 seed);
 U64	Random(U32 in);
+U64	Random2(U32 in);

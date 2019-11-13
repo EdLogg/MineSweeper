@@ -15,212 +15,120 @@ HBITMAP hBackgndMedium = NULL;
 HBITMAP hBackgndSmall = NULL;
 HBITMAP hMine = NULL;
 HBITMAP hNumbers = NULL;
+HBITMAP hDead = NULL;
+HBITMAP hSimilar = NULL;
+HBITMAP hSuper = NULL;
+HBITMAP hBest = NULL;
 FILE *	testResults = NULL;						// for testing stats
 FILE *	testAllResults = NULL;					// for testing starting, endplay, or offsets possibilities
+FILE *	gametreeResults = NULL;					// listing the game tree
+FILE *	superLocResults = NULL;					// listing the game tree
+FILE *	gametreeTimes;							// list game tree solution times
+char	sizeString[16];
 char	startString[16];
-char	seedString[16];
-char	endPlayString[16];
-char	offsetString[16];
-char 	prefixString[128];
+char	endPlayString[32];
+char	thresholdString[32];
+char	seedString[32];
 int		width, height, minesStart;				// size of puzzle and number of mines to start
-int		testing;								// puzzle testing remaining
-int		testingMax;								// max number of puzzles to test
-int		testingAllTotal;						// total number of puzzles when testing multiple seeds
-int		testStart;								// what starting position (index) are we testing
-int		testEndPlay;							// what end play (index) are we testing
-int		testOffset;								// what offset (index)are we testing
+int		testing;								// current puzzle testing (1 to testingMax)
+int		testingMax;								// max number of puzzles to test for each set
+int		testingAllTotal;						// expected total number of puzzles for testing (actual may be less)
+char 	prefixString[MAX_PATH];
 char	testFilePath[MAX_PATH];
 char	testFileName[MAX_PATH];
 char	testAllFileName[MAX_PATH];
 int		startX, startY;							// starting location for new games
 int		saveStartX, saveStartY;
-int		saveEndPlayCount;
-double	saveGuess1Offset;
-int		startPositions;							// number of positions for start pos tests
-int		seedsUsed;								// number of seeds used so far
-U32		seed;									// seed for random number generator
-U32		saveSeed;								// save seed used for testing
-U32		startSeed;								// starting seed to use for starting multiple tests
-U32		lastSeed;								// last seed to use
-int		wins[1000];								// save win count for IDM_TEST200x100 and IDM_TEST1000x100
-bool	savePuzzles;							// save puzzles when testing 
+int		testRunCount;							// number of 100 sets to run
+int		setsUsed;								// current set number
+int		setStart;								// starting set number
+int		setEnd;									// number of sets to test
+double	guessThreshold;							// threshold for guessing
+double	clearMultiplier;						// super location multiplier for secondary entries
+bool	topToBottomPriority;					// guess priority from top to bottom vs left to right first
+bool	saveSetResults;							// save results for each set of 100 puzzles
+bool	saveTiming;								// save puzzles that take too long when testing
+bool	saveInteresting;						// save interestig puzzles when testing
+bool	saveGuess0Fails;						// save guess0 fails
+bool	saveGameTreeFails;						// save gametree fails
+bool	saveSuperLocFails;						// save guess1 and superLoc fails
+bool	saveSuperLocMultiplierChanges;			// save puzzles when superLoc threshold is used
+int		saveGameTreeResults;					// 0 = no results, 1 = final results, 2 = top level results, 3 = full tree
+int		saveSuperLocResults;					// 0 = no results, 1 = finish results, 2 = all results, 3 = include all solutions
+int		useNewSuperLocMethod;					// -1=jar method, 0=v1.2c method, 1=new method for calculating superLoc clears
+bool	useSuperLocMultiplier;					// use multiply method to use second best superLoc if clears is better
+U64		seed;									// seed for random number generator
+U64		saveSeed;								// save seed used for testing
+U64		startSeed;								// starting seed to use for starting multiple tests
 
 
 static	RECT Interior = { WIDTH_OFFSET, 0, WIDTH_OFFSET + SCREEN_WIDTH, 343 }; // include time and count area below
 static	RECT TimeRect = { 114, 329, 145, 343 };
-static	RECT RuleRect = { 200, 0, 400, 14 };
+static	RECT TestRect = { 200, 4, 400, 343 };
+static	RECT RuleRect = { 200, 4, 400, 20 };
 static	RECT GameOverRect = { 200, 329, 400, 343 };
 static	RECT CountRect = { 456, 329, 487, 343 };
 static	RECT ProbRect = { 100, 329, 160, 343 };
 
 static char * RuleText[MAX_RULES] =
 {
-	"Rule 1",
-	"Rule 2",
-	"Rule 3",
-	"Rule 4",
-	"Rule 5",
-	"Rule 6",
-	"Rule 7",
-	"Rule 8",
-	"Rule 9",
-	"Rule 10",
+	"Mine",
+	"Clear",
+	"Deduced",
+	"Do or Die",
+	"GameTree",
+	"SuperLoc",
 	"Guess 1",
 	"Guess 2",
 };
 
 
-int EndPlayValues[] =
+void ClearStats()
 {
-	8, 10, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30,
-};
-#define END_PLAY_VALUES	(sizeof(EndPlayValues) / sizeof(EndPlayValues[0]))
-
-double Guess1Offsets[] =
-{
-	-.08, -.07, -.06, -.05, -.04, -.03, -.02, -.01, 0.0, .01, .02, .03, .04, .05,
-};
-#define GUESS1_OFFSETS	(sizeof(Guess1Offsets) / sizeof(Guess1Offsets[0]))
-
-int StartSmallPositions[][2] =
-{
-	{ 0, 0 },
-	{ 1, 1 },
-	{ 2, 2 },
-	{ 2, 1 },
-//	{ 1, 2 },
-	{ 3, 3 },
-	{ 3, 2 },
-//	{ 2, 3 },
-	{ 4, 4 },
-	{ 4, 3 },
-//	{ 3, 4 },
-	{ 4, 2 },
-//	{ 2, 4 },
-	{ 4, 1 },
-//	{ 1, 4 },
-};
-#define SMALL_POSITIONS	(sizeof(StartSmallPositions) / sizeof(StartSmallPositions[0]))
-
-int StartMediumPositions[][2] =
-{
-	{ 0, 0 },
-	{ 1, 1 },
-	{ 2, 2 },
-	{ 2, 1 },
-//	{ 1, 2 },
-	{ 3, 3 },
-	{ 3, 2 },
-//	{ 2, 3 },
-	{ 3, 1 },
-	{ 4, 4 },
-	{ 4, 3 },
-//	{ 3, 4 },
-	{ 4, 2 },
-//	{ 2, 4 },
-	{ 4, 1 },
-	{ 7, 7 },
-	{ 7, 6 },
-	{ 7, 5 },
-	{ 7, 4 },
-	{ 7, 3 },
-	{ 7, 2 },
-	{ 7, 1 },
-};
-#define MEDIUM_POSITIONS	(sizeof(StartMediumPositions) / sizeof(StartMediumPositions[0]))
-
-#define R	MAX_WIDTH - 1
-#define B	MAX_HEIGHT - 1
-int StartExpertPositions[][2] =
-{
-	{ 0, 0 },
-	{ 1, 1 },
-//	{ 1, B - 1 },
-//	{ R - 1, 1 },
-//	{ R - 1, B - 1 },
-	{ 2, 2 },
-//	{ 2, B - 2 },
-//	{ R - 2, B - 2 },
-//	{ R - 2, 2 },
-	{ 2, 1 },
-//	{ 2, B - 1 },
-//	{ R - 2, B - 1 },
-//	{ R - 2, 1 },
-//	{ 1, 2 },
-//	{ 1, B - 2 },
-//	{ R - 1, B - 2 },
-//	{ R - 1, 2 },
-	{ 3, 3 },
-//	{ 3, B - 3 },
-//	{ R - 3, B - 3 },
-//	{ R - 3, 3 },
-	{ 3, 2 },
-//	{ 3, B - 2 },
-//	{ R - 3, B - 2 },
-//	{ R - 3, 2 },
-//	{ 2, 3 },
-//	{ 2, B - 3 },
-//	{ R - 2, B - 3 },
-//	{ R - 2, 3 },
-	{ 3, 1 },
-//	{ 3, B - 1 },
-//	{ R - 3, B - 1 },
-//	{ R - 3, 1 },
-//	{ 1, 3 },
-//	{ 1, B - 3 },
-//	{ R - 1, B - 3 },
-//	{ R - 1, 3 },
-	{ 4, 4 },
-//	{ 4, B - 4 },
-//	{ R - 4, B - 4 },
-//	{ R - 4, 4 },
-	{ 4, 3 },
-//	{ 4, B - 3 },
-//	{ R - 4, B - 3 },
-//	{ R - 4, 3 },
-//	{ 3, 4 },
-//	{ 3, B - 4 },
-//	{ R - 3, B - 4 },
-//	{ R - 3, 4 },
-	{ 4, 2 },
-//	{ 4, B - 2 },
-//	{ R - 4, B - 2 },
-//	{ R - 4, 2 },
-//	{ 2, 4 },
-//	{ 2, B - 4 },
-//	{ R - 2, B - 4 },
-//	{ R - 2, 4 },
-	{ 4, 1 },
-//	{ 4, B - 1 },
-//	{ R - 4, B - 1 },
-//	{ R - 4, 1 },
-//	{ 1, 4 },
-//	{ 1, B - 4 },
-//	{ R - 1, B - 4 },
-//	{ R - 1, 4 },
-//	{ 0, 7 },
-//	{ R - 0, 7 },
-//	{ 7, 0 },
-//	{ 7, B - 0 },
-//	{ 1, 7 },
-//	{ R - 1, 7 },
-	{ 7, 1 },
-//	{ 7, B - 1 },
-//	{ 2, 7 },
-//	{ R - 2, 7 },
-	{ 7, 2 },
-//	{ 7, B - 2 },
-//	{ 3, 7 },
-//	{ R - 3, 7 },
-	{ 7, 3 },
-//	{ 7, B - 3 },
-//	{ 4, 7 },
-//	{ R - 4, 7 },
-	{ 7, 4 },
-//	{ 7, B - 4 },
-	{ 14, 7 },
-};
-#define EXPERT_POSITIONS	(sizeof(StartExpertPositions) / sizeof(StartExpertPositions[0]))
+	for (int i = 0; i < MAX_RULES; i++)
+		rulesCountTotal[i] = 0;
+	winTotal = 0;
+	testTotal = 0;
+	guess0Failed = 0;
+	guess1Failed = 0;
+	guess2Failed = 0;
+	gameTreeFailed = 0;
+	superLocFailed = 0;
+	maxHashUsed = 0;
+	maxHashHits = 0;
+	winProb = 0;
+	lossProb = 0;
+	guess0Prob = 0;
+	guess1Prob = 0;
+	guess2Prob = 0;
+	gameTreeProb = 0;
+	superLocProb = 0;
+	guessesPerWin = 0;
+	guessesPerLoss = 0;
+	maxCounts = 1;										// see MAX_COUNTS in tank.cpp
+	maxLists = 1;										// see MAX_LISTS in tank.cpp
+	maxPerimeter = 0;
+	maxSinglePerimeter = 0;
+	maxNeighbors = 0;
+	numEndPlays = 0;
+	numMissedEndPlays = 0;
+	maxEndPlayLength = 0;
+	numEndPlaySmall = 0;
+	numEndPlayLarge = 0;
+	maxListSolutions = 0;
+	maxCompletedSolutions = 0;
+	gametreeUsed = 0;
+	gametreeUsedEarly = 0;
+	gametreeEntriesUsed = 0;
+	gametreeHelped = 0;
+	gametreeLinksNeeded = 0;
+	gametreeMaxDepth = 0;
+	superLocMaxCandidates = 0;
+	superLocMultiplierUsed = 0;
+	superLocMultiplierImproved = 0;
+	superLocMultiplierFailed = 0;
+	superLocMultiplyUsed = 0;
+}
 
 
 void SetTestingFiles(int wmId)
@@ -230,171 +138,56 @@ void SetTestingFiles(int wmId)
 
 	prefixString[0] = '.';
 	prefixString[1] = 0;
-	if (wmId == IDM_TEST200x100
-	||	wmId == IDM_TEST1000x100
-	||	wmId == IDM_TESTSTARTINGPOS
-	||	wmId == IDM_TESTENPLAYS
-	||	wmId == IDM_TESTGUESS1OFFSETS)
+#if SHOW_GAMETREE_TIMES
+	gametreeTimes = fopen("gametreeTimes.txt", "w");
+#endif
+	if (wmId == IDM_TESTRUN)
 	{
 		TimeStartOverall();
+		if (seed == 0)								// use default seed if one is not provided
+			seed = 1;
 		startSeed = seed;
-		seedsUsed = 0;
+		setsUsed = 1;
 		winAllTotal = 0;
-		if (startX != START_X
-		|| startY != START_Y)
-			sprintf(startString, "start=%d,%d ", startX, startY);
+		sprintf(sizeString, "%dx%d", width, height);
+		sprintf(startString, "start=%d,%d", startX, startY);
+		sprintf(endPlayString, "maxSolutions=%d", maxSolutions);
+		if (useSuperLocMultiplier)
+			sprintf(thresholdString, "threshold=%.3fx%.2f", guessThreshold, clearMultiplier);
 		else
-			startString[0] = 0;
-		if (endPlayCount != END_PLAY_COUNT)
-			sprintf(endPlayString, "endPlay=%d ", endPlayCount);
-		else
-			endPlayString[0] = 0;
-		if (guess1Offset != GUESS1_OFFSET)
-			sprintf(offsetString, "offset=%3.2f ", guess1Offset);
-		else
-			offsetString[0] = 0;
+			sprintf(thresholdString, "threshold=%.3f", guessThreshold);
 		now = time(NULL);
 		date = localtime(&now);
-		if (wmId == IDM_TEST200x100
-		|| wmId == IDM_TEST1000x100)
-		{
-			testingMax = 100;						// number of puzzles to test
-			if (seed == 0)							// use default seed if one is not provided
-			{
-				startSeed = seed = 1;
-				RandomSeed(seed);
-			}
-			if (wmId == IDM_TEST200x100)
-			{
-				lastSeed = seed + 200;				// stop when we get to this seed
-				testingAllTotal = 200 * testingMax;
-				sprintf(prefixString, ".\\Test 200x100 %s%s%s%d.%d.%d %d.%d.%d",
-					startString, endPlayString, offsetString,
-					1900 + date->tm_year, date->tm_mon + 1, date->tm_mday, date->tm_hour, date->tm_min, date->tm_sec);
-			}
-			else
-			{
-				lastSeed = seed + 1000;				// stop when we get to this seed
-				testingAllTotal = 1000 * testingMax;
-				sprintf(prefixString, ".\\Test 1000x100 %s%s%s%d.%d.%d %d.%d.%d",
-					startString, endPlayString, offsetString,
-					1900 + date->tm_year, date->tm_mon + 1, date->tm_mday, date->tm_hour, date->tm_min, date->tm_sec);
-			}
-//			lastSeed = seed + 2;					// stop when we get to this seed
-			CreateDirectory(prefixString, NULL);	// create test directory
-			sprintf(testAllFileName, "%s\\results.txt", prefixString);
-			testAllResults = fopen(testAllFileName, "w");
-		}
-		else if (wmId == IDM_TESTSTARTINGPOS)
-		{
-			if (seed == 0)							// use default seed if one is not provided
-			{
-				startSeed = seed = 1;
-				RandomSeed(seed);
-			}
-			testStart = 0;
-			if (width == 9)
-			{
-				startPositions = SMALL_POSITIONS;
-				startX = StartSmallPositions[0][0];
-				startY = StartSmallPositions[0][1];
-			}
-			else if (width == 16)
-			{
-				startPositions = MEDIUM_POSITIONS;
-				startX = StartMediumPositions[0][0];
-				startY = StartMediumPositions[0][1];
-			}
-			else 
-			{
-				startPositions = EXPERT_POSITIONS;
-				startX = StartExpertPositions[0][0];
-				startY = StartExpertPositions[0][1];
-			}
-			testingMax = TEST_SAMPLES;				// number of puzzles to test
-			testingAllTotal = MAX_SEEDS * testingMax;
-			sprintf(prefixString, ".\\Test StartPos %s%s%d.%d.%d %d.%d.%d",
-				endPlayString, offsetString,
-				1900 + date->tm_year, date->tm_mon + 1, date->tm_mday, date->tm_hour, date->tm_min, date->tm_sec);
-			CreateDirectory(prefixString, NULL);	// create test directory
-			sprintf(testAllFileName, "%s\\results.txt", prefixString);
-			testAllResults = fopen(testAllFileName, "w");
-		}
-		else if (wmId == IDM_TESTENPLAYS)
-		{
-			if (seed == 0)							// use default seed if one is not provided
-			{
-				startSeed = seed = 1;
-				RandomSeed(seed);
-			}
-			testEndPlay = 0;
-			endPlayCount = EndPlayValues[0];
-			testingMax = TEST_SAMPLES;				// number of puzzles to test
-			testingAllTotal = MAX_SEEDS * testingMax;
-			sprintf(prefixString, ".\\Test EndPlay %s%s%d.%d.%d %d.%d.%d",
-				startString, offsetString,
-				1900 + date->tm_year, date->tm_mon + 1, date->tm_mday, date->tm_hour, date->tm_min, date->tm_sec);
-			CreateDirectory(prefixString, NULL);	// create test directory
-			sprintf(testAllFileName, "%s\\results.txt", prefixString);
-			testAllResults = fopen(testAllFileName, "w");
-		}
-		else if (wmId == IDM_TESTGUESS1OFFSETS)
-		{
-			if (seed == 0)							// use default seed if one is not provided
-			{
-				startSeed = seed = 1;
-				RandomSeed(seed);
-			}
-			RandomSeed(seed);
-			testOffset = 0;
-			guess1Offset = Guess1Offsets[0];
-			testingMax = TEST_SAMPLES;				// number of puzzles to test
-			testingAllTotal = MAX_SEEDS * testingMax;
-			sprintf(prefixString, ".\\Test Guess1Offset %s%s%d.%d.%d %d.%d.%d",
-				startString, endPlayString,
-				1900 + date->tm_year, date->tm_mon + 1, date->tm_mday, date->tm_hour, date->tm_min, date->tm_sec);
-			CreateDirectory(prefixString, NULL);	// create test directory
-			sprintf(testAllFileName, "%s\\results.txt", prefixString);
-			testAllResults = fopen(testAllFileName, "w");
-		}
+		testingMax = 100;							// number of puzzles to test
+		RandomSeed2(seed);
+		testingAllTotal = setEnd * testingMax;
+		sprintf(seedString, "seed=0x%llx", seed);
+		char * method;
+		if (useNewSuperLocMethod < 0)
+			method = "jar";
+		else if (useNewSuperLocMethod == 0)
+			method = "old";
+		else
+			method = "new";
+		char * direction;
+		if (topToBottomPriority)
+			direction = "tb";
+		else
+			direction = "lr";
+		sprintf(prefixString, ".\\v%s  %s %s%s %s %dx100 %s %s %s %s %d.%d.%d %d.%d.%d",
+			VERSION, sizeString, method,
+			(useSuperLocMultiplier ? "+" : ""), direction,
+			setEnd, startString, endPlayString, thresholdString, seedString,
+			1900 + date->tm_year, date->tm_mon + 1, date->tm_mday, date->tm_hour, date->tm_min, date->tm_sec);
+		CreateDirectory(prefixString, NULL);	// create test directory
+		sprintf(testAllFileName, "%s\\results.txt", prefixString);
+		testAllResults = fopen(testAllFileName, "w");
 		if (testAllResults != NULL)
 		{
-			if (wmId != IDM_TESTSTARTINGPOS)
-				fprintf(testAllResults, "start=%d,%d\n", startX, startY);
-			if (wmId != IDM_TESTENPLAYS)
-				fprintf(testAllResults, "endPlay=%d\n", endPlayCount);
-			if (wmId != IDM_TESTGUESS1OFFSETS)
-				fprintf(testAllResults, "Guess1Offset=%3.2f\n", guess1Offset);
-			if (testStart < 0
-			&& testEndPlay < 0
-			&& testOffset < 0)
-			{
-				fprintf(testAllResults, "seed       wins\n---------------\n");
-			}
-			else
-			{
-				fprintf(testAllResults, "seed\t");
-				for (int i = 0; i < MAX_SEEDS; i++)
-					fprintf(testAllResults, "%d\t", startSeed + i);
-				fprintf(testAllResults, "Totals\tPercent\tStd.Dev.\n");
-				fprintf(testAllResults, "--------------------------------------------------------------------------------------------------------------\n");
-				if (testStart >= 0)
-					fprintf(testAllResults, "%d,%d\t", startX, startY);
-				else if (testEndPlay >= 0)
-					fprintf(testAllResults, "%d\t", endPlayCount);
-				else if (testOffset >= 0)
-					fprintf(testAllResults, "%3.2f\t", guess1Offset);
-			}
+			fprintf(testAllResults, "Ed Logg's Minesweeper version %s\n", VERSION);
+			fprintf(testAllResults, "set\twins\n------------\n");
 		}
 	}
-	else if (wmId == IDM_TEST10)
-		testingMax = 10;						// number of puzzles to test
-	else if (wmId == IDM_TEST100)
-		testingMax = 98;						// number of puzzles to test
-	else if (wmId == IDM_TEST1000)
-		testingMax = 1000;						// number of puzzles to test
-	else
-		testingMax = 10000;						// number of puzzles to test
 }
 
 
@@ -403,47 +196,22 @@ void StartTest()
 	time_t now;
 	struct tm * date;
 
-	saveSeed = seed;							// used later in the results file
-	seed = 0;									// clear seed for next time
 	testing = 1;								// start with this
-	for (int i = 0; i < MAX_RULES; i++)
-		rulesCountTotal[i] = 0;
-	winTotal = 0;
-	guess1Failed = 0;
-	guess2Failed = 0;
-	winProb = 0;
-	lossProb = 0;
-	guess1Prob = 0;
-	guess2Prob = 0;
-	guessesPerWin = 0;
-	guessesPerLoss = 0;
+	ClearStats();
 	for (int i = 0; i < MAX_WINS_WITH_GUESSES; i++)
 		winsWithGuesses[i] = 0;
-	if (saveSeed != 0)
-		sprintf(seedString, "seed=%d ", saveSeed);
-	else
-		seedString[0] = 0;
-	if (startX != START_X
-	|| startY != START_Y)
-		sprintf(startString, "start=%d,%d ", startX, startY);
-	else
-		startString[0] = 0;
-	if (endPlayCount != END_PLAY_COUNT)
-		sprintf(endPlayString, "endPlay=%d ", endPlayCount);
-	else
-		endPlayString[0] = 0;
-	if (guess1Offset != GUESS1_OFFSET)
-		sprintf(offsetString, "offset=%3.2f ", guess1Offset);
-	else
-		offsetString[0] = 0;
+	sprintf(seedString, "set=%d", setsUsed);
 	now = time(NULL);
 	date = localtime(&now);
-	sprintf(testFilePath, "%s\\Test %s%s%s%s%d.%d.%d %d.%d.%d",
-		prefixString, seedString, startString, endPlayString, offsetString,
-		1900 + date->tm_year, date->tm_mon + 1, date->tm_mday, date->tm_hour, date->tm_min, date->tm_sec);
-	CreateDirectory(testFilePath, NULL);		// create test directory
-	sprintf(testFileName, "%s\\results.txt", testFilePath);
-	testResults = fopen(testFileName, "w");
+	if (saveSetResults)
+	{
+		sprintf(testFilePath, "%s\\Test %s", prefixString, seedString);
+		CreateDirectory(testFilePath, NULL);	// create test directory
+		if (prefixString[1] == 0)					
+			strncpy(prefixString, testFilePath, MAX_PATH);
+		sprintf(testFileName, "%s\\results.txt", testFilePath);
+		testResults = fopen(testFileName, "w");
+	}
 }
 
 
@@ -451,84 +219,14 @@ bool	GetNextTest()
 {
 	if (testAllResults == NULL)
 		return false;
-	if (testStart < 0
-	&&	testEndPlay < 0
-	&&	testOffset < 0)
+	++setsUsed;
+	if (setsUsed > setEnd)						// we are done
 	{
-		++seedsUsed;
-		seed = ++saveSeed;
-		if (seed == lastSeed)					// we are done
-		{
-			seed = 0;							// clear seed we just set
-			SaveTotalResults(testAllResults);	// display all stats
-			ClearTotalStats();
-			return false;
-		}
+		setStart++;								// next set to use
+		seed = 0;								// clear seed we just set
+		SaveTotalResults(testAllResults);		// display all stats
+		return false;
 	}
-	else if (++seedsUsed == MAX_SEEDS)
-	{
-		char statsFileName[MAX_PATH];
-		FILE * statsFile;
-		sprintf(statsFileName, "%s\\stats start=%d,%d endPlay=%d guess1Offset=%.2f.txt",
-			prefixString, startX, startY, endPlayCount, guess1Offset);
-		statsFile = fopen(statsFileName, "w");
-		if (statsFile != NULL)
-		{
-			SaveTotalResults(statsFile);
-			ClearTotalStats();
-			fclose(statsFile);
-		}
-		seedsUsed = 0;
-		seed = startSeed;
-		winAllTotal = 0;
-		if (testStart >= 0)
-		{
-			if (++testStart >= startPositions)
-			{
-				testStart = -1;
-				return false;
-			}
-			if (width == 9)
-			{
-				startX = StartSmallPositions[testStart][0];
-				startY = StartSmallPositions[testStart][1];
-			}
-			else if (width == 16)
-			{
-				startX = StartMediumPositions[testStart][0];
-				startY = StartMediumPositions[testStart][1];
-			}
-			else
-			{
-				startX = StartExpertPositions[testStart][0];
-				startY = StartExpertPositions[testStart][1];
-			}
-			fprintf(testAllResults, "%d,%d\t", startX, startY);
-		}
-		else if (testEndPlay >= 0)
-		{
-			if (++testEndPlay >= END_PLAY_VALUES)
-			{
-				testEndPlay = -1;
-				return false;
-			}
-			endPlayCount = EndPlayValues[testEndPlay];
-			fprintf(testAllResults, "%d\t", endPlayCount);
-		}
-		else if (testOffset >= 0)
-		{
-			if (++testOffset >= GUESS1_OFFSETS)
-			{
-				testOffset = -1;
-				return false;
-			}
-			guess1Offset = Guess1Offsets[testOffset];
-			fprintf(testAllResults, "%3.2f\t", guess1Offset);
-		}
-	}
-	else
-		seed = ++saveSeed;
-	RandomSeed(seed);
 	StartTest();
 	return true;
 }
@@ -539,6 +237,45 @@ void Draw(HWND hWnd, HDC hdc, PAINTSTRUCT ps)
 	HDC hdcMem = CreateCompatibleDC(hdc);
 	HBITMAP hbmOld;
 	int offset;
+
+	HFONT hFont = (HFONT)GetStockObject(DEFAULT_GUI_FONT);
+	LOGFONT logfont;
+	GetObject(hFont, sizeof(LOGFONT), &logfont);
+	logfont.lfHeight = 16;
+	logfont.lfWeight = 1000;		// 400=normal 700=bold 1000=max
+	HFONT hNewFont = CreateFontIndirect(&logfont);
+
+	if (testing
+	&&  ps.rcPaint.top == TestRect.top
+	&&	ps.rcPaint.left == TestRect.left
+	&&	ps.rcPaint.right == TestRect.right
+	&&	ps.rcPaint.bottom == TestRect.bottom)
+	{
+		SelectObject(hdcMem, hBackgndExpert);							// clear game over area in case it was used last frame
+		BitBlt(hdc, GameOverRect.left, GameOverRect.top, GameOverRect.right - GameOverRect.left, GameOverRect.bottom - GameOverRect.top, hdcMem, GameOverRect.left, GameOverRect.top, SRCCOPY);
+		BitBlt(hdc, RuleRect.left, RuleRect.top, RuleRect.right - RuleRect.left, RuleRect.bottom - RuleRect.top, hdcMem, RuleRect.left, RuleRect.top, SRCCOPY);
+		HFONT hOldFont = (HFONT)SelectObject(hdc, hNewFont);
+		SetBkMode(hdc, TRANSPARENT);
+		SetTextColor(hdc, RGB(0, 0, 0));
+		char string[24];
+		int test = totalTests + testTotal;
+		sprintf(string, "%d/%d", test, testingAllTotal);
+		DrawText(hdc, string, -1, &GameOverRect, DT_CENTER | DT_TOP);
+		int wins = winAllTotal + winTotal;
+		int total = totalTests + testTotal;
+		if (total > 0)
+		{
+			char string[24];
+			double winrate = (double)wins / total;
+			double moe = MARGIN_OF_ERROR * sqrt((1.0 - winrate) * winrate / total);
+			sprintf(string, "%.3f%% +- %.3f%%", winrate * 100.0, moe * 100.0);
+			DrawText(hdc, string, -1, &RuleRect, DT_CENTER | DT_TOP);
+		}
+		SelectObject(hdc, hOldFont);								// reset font
+		DeleteObject(hNewFont);
+		DeleteDC(hdcMem);											// delete 												
+		return;
+	}
 
 	// draw background
 	if (width == MAX_WIDTH)
@@ -581,7 +318,7 @@ void Draw(HWND hWnd, HDC hdc, PAINTSTRUCT ps)
 	{
 		for (int x = 0; x < width; x++)
 		{
-			if (exposed[y][x] == EXPOSE_EXPODE)
+			if (exposed[y][x] == EXPOSE_EXPLODE)
 				BitBlt(hdc, offset + x * TILE_WIDTH, HEIGHT_OFFSET + y * TILE_HEIGHT, TILE_WIDTH, TILE_HEIGHT, hdcMem, TILE_WIDTH, 0, SRCCOPY);
 			else if (exposed[y][x] == EXPOSE_MINE)
 			{
@@ -612,16 +349,63 @@ void Draw(HWND hWnd, HDC hdc, PAINTSTRUCT ps)
 		}
 	}
 
+	// draw dead, similar and super locations
+	if (listNext > 0)							// lists are valid
+	{
+		for (int y = 0; y < height; y++)
+		{
+			for (int x = 0; x < width; x++)
+			{
+				if (listUsed[y][x] < 0)
+					continue;
+				int artOffset = 0;
+				if (cheating && puzzle[y][x] != 0)
+					artOffset = TILE_WIDTH;
+				if (listArray[listUsed[y][x]].dead)
+				{
+					SelectObject(hdcMem, hDead);
+					BitBlt(hdc, offset + x * TILE_WIDTH, HEIGHT_OFFSET + y * TILE_HEIGHT, TILE_WIDTH, TILE_HEIGHT, hdcMem, artOffset, 0, SRCCOPY);
+				}
+				else if (listArray[listUsed[y][x]].similar)
+				{
+					SelectObject(hdcMem, hSimilar);
+					BitBlt(hdc, offset + x * TILE_WIDTH, HEIGHT_OFFSET + y * TILE_HEIGHT, TILE_WIDTH, TILE_HEIGHT, hdcMem, artOffset, 0, SRCCOPY);
+				}
+			}
+		}
+		SelectObject(hdcMem, hSuper);
+		for (int i = 0; i < superNext; i++)
+		{		
+			int artOffset = 0;
+			if (cheating && puzzle[SuperLocArray[i].y][SuperLocArray[i].x] != 0)
+				artOffset = TILE_WIDTH;
+			BitBlt(hdc, offset + SuperLocArray[i].x * TILE_WIDTH, HEIGHT_OFFSET + SuperLocArray[i].y * TILE_HEIGHT, TILE_WIDTH, TILE_HEIGHT, hdcMem, artOffset, 0, SRCCOPY);
+		}
+		if (gameTreeNext > 0)
+		{
+			SelectObject(hdcMem, hSuper);
+			for (int i = 0; i < gameTreeNext; i++)
+			{
+				int artOffset = 0;
+				if (cheating && puzzle[GameTreeArray[i].y][GameTreeArray[i].x] != 0)
+					artOffset = TILE_WIDTH;
+				BitBlt(hdc, offset + GameTreeArray[i].x * TILE_WIDTH, HEIGHT_OFFSET + GameTreeArray[i].y * TILE_HEIGHT, TILE_WIDTH, TILE_HEIGHT, hdcMem, artOffset, 0, SRCCOPY);
+			}
+		}
+	}
+	if (bestx >= 0)
+	{
+		SelectObject(hdcMem, hBest);
+		int artOffset = 0;
+		if (cheating && puzzle[besty][bestx] != 0)
+			artOffset = TILE_WIDTH;
+		BitBlt(hdc, offset + bestx * TILE_WIDTH, HEIGHT_OFFSET + besty * TILE_HEIGHT, TILE_WIDTH, TILE_HEIGHT, hdcMem, artOffset, 0, SRCCOPY);
+	}
+
 	// draw number of mines remaining
 	SelectObject(hdcMem, hBackgndExpert);
 	BitBlt(hdc, CountRect.left, CountRect.top, CountRect.right - CountRect.left, CountRect.bottom - CountRect.top, hdcMem, CountRect.left, CountRect.top, SRCCOPY);
 	BitBlt(hdc, ProbRect.left, ProbRect.top, ProbRect.right - ProbRect.left, ProbRect.bottom - ProbRect.top, hdcMem, ProbRect.left, ProbRect.top, SRCCOPY);
-	HFONT hFont = (HFONT)GetStockObject(DEFAULT_GUI_FONT);
-	LOGFONT logfont;
-	GetObject(hFont, sizeof(LOGFONT), &logfont);
-	logfont.lfHeight = 16;
-	logfont.lfWeight = 1000;		// 400=normal 700=bold 1000=max
-	HFONT hNewFont = CreateFontIndirect(&logfont);
 	HFONT hOldFont = (HFONT)SelectObject(hdc, hNewFont);
 	SetBkMode(hdc, TRANSPARENT);
 	SetTextColor(hdc, RGB(255, 255, 255));
@@ -637,27 +421,54 @@ void Draw(HWND hWnd, HDC hdc, PAINTSTRUCT ps)
 	DrawText(hdc, string, -1, &ProbRect, DT_CENTER | DT_TOP);
 	SelectObject(hdc, hOldFont);										// reset font
 
-	// show game over
-	SelectObject(hdcMem, hBackgndExpert);								// clear game over area in case it was used last frame
-	BitBlt(hdc, GameOverRect.left, GameOverRect.top, GameOverRect.right - GameOverRect.left, GameOverRect.bottom - GameOverRect.top, hdcMem, GameOverRect.left, GameOverRect.top, SRCCOPY);
-	if (gameOver)
-	{
-		hOldFont = (HFONT)SelectObject(hdc, hNewFont);
-		SetBkMode(hdc, TRANSPARENT);
-		SetTextColor(hdc, RGB(255, 255, 255));
-		DrawText(hdc, "Game Over", -1, &GameOverRect, DT_CENTER | DT_TOP);
-		SelectObject(hdc, hOldFont);									// reset font
-	}
-
-	// show last rule used
-	if (lastRuleUsed >= 0)
+	// show game over or progress in test run
+	if (testing)
 	{
 		hOldFont = (HFONT)SelectObject(hdc, hNewFont);
 		SetBkMode(hdc, TRANSPARENT);
 		SetTextColor(hdc, RGB(0, 0, 0));
-		DrawText(hdc, RuleText[lastRuleUsed], -1, &RuleRect, DT_CENTER | DT_TOP);
-		SelectObject(hdc, hOldFont);									// reset font
+		char string[24];
+		int test = totalTests + testTotal;
+		sprintf(string, "%d/%d", test, testingAllTotal);
+		DrawText(hdc, string, -1, &GameOverRect, DT_CENTER | DT_TOP);
+		SelectObject(hdc, hOldFont);								// reset font
 	}
+	else
+	{
+		SelectObject(hdcMem, hBackgndExpert);							// clear game over area in case it was used last frame
+		BitBlt(hdc, GameOverRect.left, GameOverRect.top, GameOverRect.right - GameOverRect.left, GameOverRect.bottom - GameOverRect.top, hdcMem, GameOverRect.left, GameOverRect.top, SRCCOPY);
+		if (gameOver)
+		{
+			hOldFont = (HFONT)SelectObject(hdc, hNewFont);
+			SetBkMode(hdc, TRANSPARENT);
+			SetTextColor(hdc, RGB(0, 0, 0));
+			DrawText(hdc, "Game Over", -1, &GameOverRect, DT_CENTER | DT_TOP);
+			SelectObject(hdc, hOldFont);								// reset font
+		}
+	}
+
+	// show last rule used or testing results
+	hOldFont = (HFONT)SelectObject(hdc, hNewFont);
+	SetBkMode(hdc, TRANSPARENT);
+	SetTextColor(hdc, RGB(0, 0, 0));
+	if (testing)
+	{
+		int wins = winAllTotal + winTotal;
+		int total = totalTests + testTotal;
+		if (total > 0)
+		{
+			char string[24];
+			double winrate = (double)wins / total;
+			double moe = MARGIN_OF_ERROR * sqrt((1.0 - winrate) * winrate / total);
+			sprintf(string, "%.3f%% +- %.3f%%", winrate * 100.0, moe * 100.0);
+			DrawText(hdc, string, -1, &RuleRect, DT_CENTER | DT_TOP);
+		}
+	}
+	else if (lastRuleUsed >= 0)
+	{
+		DrawText(hdc, RuleText[lastRuleUsed], -1, &RuleRect, DT_CENTER | DT_TOP);
+	}
+	SelectObject(hdc, hOldFont);										// reset font
 
 	SelectObject(hdcMem, hbmOld);										// restore the old object
 	DeleteObject(hNewFont);
@@ -674,7 +485,7 @@ bool FindPosition(HWND hWnd, int h, int v, int & x, int & y)
 		offset = WIDTH_OFFSET + 10 * TILE_WIDTH;
 	else 
 		offset = WIDTH_OFFSET + 7 * TILE_WIDTH;
-	x = (h - WIDTH_OFFSET) / TILE_WIDTH;
+	x = (h - offset) / TILE_WIDTH;
 	y = (v - HEIGHT_OFFSET) / TILE_HEIGHT;
 	if (0 <= x && x < width
 	&&	0 <= y && y < height)
@@ -694,6 +505,7 @@ INT_PTR CALLBACK Statistics(HWND hDlg, UINT message, WPARAM wParam, LPARAM lPara
 	int width, widthOwner;
 	HWND msg;
 	char string[128];
+	double winrate = 0.0;
 
 	switch (message)
 	{
@@ -704,7 +516,7 @@ INT_PTR CALLBACK Statistics(HWND hDlg, UINT message, WPARAM wParam, LPARAM lPara
 		widthOwner = rcOwner.right - rcOwner.left;
 		GetWindowRect(hDlg, &rcWindow);
 		width = rcWindow.right - rcWindow.left;
-		SetWindowPos(hDlg, HWND_TOP, rcOwner.left + (widthOwner - width) / 2, rcOwner.top + 50, 0, 0, SWP_NOSIZE);
+		SetWindowPos(hDlg, HWND_TOP, rcOwner.left + (widthOwner - width) / 2, rcOwner.top - 10, 0, 0, SWP_NOSIZE);
 		msg = GetDlgItem(hDlg, IDC_STATS0);
 		sprintf(string, "%d", totalTests);
 		SetWindowText(msg, string);
@@ -713,9 +525,24 @@ INT_PTR CALLBACK Statistics(HWND hDlg, UINT message, WPARAM wParam, LPARAM lPara
 		SetWindowText(msg, string);
 		msg = GetDlgItem(hDlg, IDC_STATS2);
 		if (totalTests != 0)
-			sprintf(string, "%.2f%%", 100.0 * totalWins / totalTests);
+		{
+			winrate = (double)totalWins / totalTests;
+			sprintf(string, "%.3f%%", 100.0 * winrate);
+		}
 		else
 			sprintf(string, "0.0%%");
+		SetWindowText(msg, string);
+		msg = GetDlgItem(hDlg, IDC_STATSMOE);
+		if (totalTests != 0)
+		{
+			double moe = MARGIN_OF_ERROR * sqrt((1.0 - winrate) * winrate / totalTests);
+			sprintf(string, "%.3f%%", 100.0 * moe);
+		}
+		else
+			sprintf(string, "0.0%%");
+		SetWindowText(msg, string);
+		msg = GetDlgItem(hDlg, IDC_STATS3);
+		sprintf(string, "%d", totalGuess0);
 		SetWindowText(msg, string);
 		msg = GetDlgItem(hDlg, IDC_STATS4);
 		sprintf(string, "%d", totalGuess1);
@@ -724,91 +551,345 @@ INT_PTR CALLBACK Statistics(HWND hDlg, UINT message, WPARAM wParam, LPARAM lPara
 		sprintf(string, "%d", totalGuess2);
 		SetWindowText(msg, string);
 		msg = GetDlgItem(hDlg, IDC_STATS6);
+		sprintf(string, "%d", totalGameTree);
+		SetWindowText(msg, string);
+		msg = GetDlgItem(hDlg, IDC_STATS6x);
+		sprintf(string, "%d", totalSuperLoc);
+		SetWindowText(msg, string);
+		msg = GetDlgItem(hDlg, IDC_STATS7);
+		if (totalGuess0 != 0)
+			sprintf(string, "%3.1f%%", (100.0 * totalGuess0Failed) / totalGuess0);
+		else
+			sprintf(string, "0.0");
+		SetWindowText(msg, string);
+		msg = GetDlgItem(hDlg, IDC_STATS8);
 		if (totalGuess1 != 0)
 			sprintf(string, "%3.1f%%", (100.0 * totalGuess1Failed) / totalGuess1);
 		else
 			sprintf(string, "0.0");
 		SetWindowText(msg, string);
-		msg = GetDlgItem(hDlg, IDC_STATS7);
+		msg = GetDlgItem(hDlg, IDC_STATS9);
 		if (totalGuess2 != 0)
 			sprintf(string, "%3.1f%%", (100.0 * totalGuess2Failed) / totalGuess2);
 		else
 			sprintf(string, "0.0");
 		SetWindowText(msg, string);
-		msg = GetDlgItem(hDlg, IDC_STATS8);
+		msg = GetDlgItem(hDlg, IDC_STATS10);
+		if (totalGameTree != 0)
+			sprintf(string, "%3.1f%%", (100.0 * totalGameTreeFailed) / totalGameTree);
+		else
+			sprintf(string, "0.0");
+		SetWindowText(msg, string);
+		msg = GetDlgItem(hDlg, IDC_STATS10x);
+		if (totalSuperLoc != 0)
+			sprintf(string, "%3.1f%%", (100.0 * totalSuperLocFailed) / totalSuperLoc);
+		else
+			sprintf(string, "0.0");
+		SetWindowText(msg, string);
+		msg = GetDlgItem(hDlg, IDC_STATS11);
 		if (totalWins != 0)
 			sprintf(string, "%4.2f", (double)totalGuessesPerWin / totalWins);
 		else
 			sprintf(string, "0.0");
 		SetWindowText(msg, string);
-		msg = GetDlgItem(hDlg, IDC_STATS9);
+		msg = GetDlgItem(hDlg, IDC_STATS12);
 		if ((totalTests - totalWins) != 0)
 			sprintf(string, "%4.2f", (double)totalGuessesPerLoss / (totalTests - totalWins));
 		else
 			sprintf(string, "0.0");
 		SetWindowText(msg, string);
-		msg = GetDlgItem(hDlg, IDC_STATS10);
+		msg = GetDlgItem(hDlg, IDC_STATS13);
 		if (totalWins > 0)
 			sprintf(string, "%4.1f%%", 100.0 * totalWinProb / totalWins);
 		else
 			sprintf(string, "0.0");
 		SetWindowText(msg, string);
-		msg = GetDlgItem(hDlg, IDC_STATS11);
+		msg = GetDlgItem(hDlg, IDC_STATS14);
 		if ((totalTests - totalWins) > 0)
 			sprintf(string, "%4.1f%%", 100.0 * totalLossProb / (totalTests - totalWins));
 		else
 			sprintf(string, "0.0");
 		SetWindowText(msg, string);
-		msg = GetDlgItem(hDlg, IDC_STATS12);
+		msg = GetDlgItem(hDlg, IDC_STATS15);
+		if (totalGuess0 != 0)
+			sprintf(string, "%4.1f%%", (100.0 * totalGuess0Prob) / totalGuess0);
+		else
+			sprintf(string, "0.0");
+		SetWindowText(msg, string);
+		msg = GetDlgItem(hDlg, IDC_STATS16);
 		if (totalGuess1 != 0)
 			sprintf(string, "%4.1f%%", (100.0 * totalGuess1Prob) / totalGuess1);
 		else
 			sprintf(string, "0.0");
 		SetWindowText(msg, string);
-		msg = GetDlgItem(hDlg, IDC_STATS13);
+		msg = GetDlgItem(hDlg, IDC_STATS17);
 		if (totalGuess2 != 0)
 			sprintf(string, "%4.1f%%", (100.0 * totalGuess2Prob) / totalGuess2);
 		else
 			sprintf(string, "0.0");
 		SetWindowText(msg, string);
+		msg = GetDlgItem(hDlg, IDC_STATS18);
+		if (totalGameTree != 0)
+			sprintf(string, "%4.1f%%", (100.0 * totalGameTreeProb) / totalGameTree);
+		else
+			sprintf(string, "0.0");
+		SetWindowText(msg, string);
+		msg = GetDlgItem(hDlg, IDC_STATS18x);
+		if (totalSuperLoc != 0)
+			sprintf(string, "%4.1f%%", (100.0 * totalSuperLocProb) / totalSuperLoc);
+		else
+			sprintf(string, "0.0");
+		SetWindowText(msg, string);
 		msg = GetDlgItem(hDlg, IDC_STATSWINS0);
-		sprintf(string, "0 : %-4d", totalWinsWithGuesses[0]);
+		sprintf(string, " 0 : %-4d", totalWinsWithGuesses[0]);
 		SetWindowText(msg, string);
 		msg = GetDlgItem(hDlg, IDC_STATSWINS1);
-		sprintf(string, "1 : %-4d", totalWinsWithGuesses[1]);
+		sprintf(string, " 1 : %-4d", totalWinsWithGuesses[1]);
 		SetWindowText(msg, string);
 		msg = GetDlgItem(hDlg, IDC_STATSWINS2);
-		sprintf(string, "2 : %-4d", totalWinsWithGuesses[2]);
+		sprintf(string, " 2 : %-4d", totalWinsWithGuesses[2]);
 		SetWindowText(msg, string);
 		msg = GetDlgItem(hDlg, IDC_STATSWINS3);
-		sprintf(string, "3 : %-4d", totalWinsWithGuesses[3]);
+		sprintf(string, " 3 : %-4d", totalWinsWithGuesses[3]);
 		SetWindowText(msg, string);
 		msg = GetDlgItem(hDlg, IDC_STATSWINS4);
-		sprintf(string, "4 : %-4d", totalWinsWithGuesses[4]);
+		sprintf(string, " 4 : %-4d", totalWinsWithGuesses[4]);
 		SetWindowText(msg, string);
 		msg = GetDlgItem(hDlg, IDC_STATSWINS5);
-		sprintf(string, "5 : %-4d", totalWinsWithGuesses[5]);
+		sprintf(string, " 5 : %-4d", totalWinsWithGuesses[5]);
 		SetWindowText(msg, string);
 		msg = GetDlgItem(hDlg, IDC_STATSWINS6);
-		sprintf(string, "6 : %-4d", totalWinsWithGuesses[6]);
+		sprintf(string, " 6 : %-4d", totalWinsWithGuesses[6]);
 		SetWindowText(msg, string);
 		msg = GetDlgItem(hDlg, IDC_STATSWINS7);
-		sprintf(string, "7 : %-4d", totalWinsWithGuesses[7]);
+		sprintf(string, " 7 : %-4d", totalWinsWithGuesses[7]);
 		SetWindowText(msg, string);
 		msg = GetDlgItem(hDlg, IDC_STATSWINS8);
-		sprintf(string, "8 : %-4d", totalWinsWithGuesses[8]);
+		sprintf(string, " 8 : %-4d", totalWinsWithGuesses[8]);
+		SetWindowText(msg, string);
+		msg = GetDlgItem(hDlg, IDC_STATSWINS9);
+		sprintf(string, " 9 : %-4d", totalWinsWithGuesses[9]);
+		SetWindowText(msg, string);
+		msg = GetDlgItem(hDlg, IDC_STATSWINS10);
+		sprintf(string, "10+: %-4d", totalWinsWithGuesses[10]);
 		SetWindowText(msg, string);
 		return (INT_PTR)TRUE;
 
 	case WM_COMMAND:
+		if (LOWORD(wParam) == IDOK
+		||	LOWORD(wParam) == IDCANCEL)
+		{
+			EndDialog(hDlg, LOWORD(wParam));
+			return (INT_PTR)TRUE;
+		}
+		else if (LOWORD(wParam) == IDIGNORE)
+		{
+			ClearTotalStats();
+			EndDialog(hDlg, LOWORD(wParam));
+			return (INT_PTR)TRUE;
+		}
+		break;
+	}
+	return (INT_PTR)FALSE;
+}
+
+
+// Message handler for testing runs
+INT_PTR CALLBACK GetTestParameters(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam)
+{
+	UNREFERENCED_PARAMETER(lParam);
+	HWND hwndOwner;
+	RECT rcOwner, rcWindow;
+	int widthW, widthOwner;
+	HWND msg;
+	char string[32];
+
+	switch (message)
+	{
+	case WM_INITDIALOG:
+		if ((hwndOwner = GetParent(hDlg)) == NULL)
+			hwndOwner = GetDesktopWindow();
+		GetWindowRect(hwndOwner, &rcOwner);
+		widthOwner = rcOwner.right - rcOwner.left;
+		GetWindowRect(hDlg, &rcWindow);
+		widthW = rcWindow.right - rcWindow.left;
+		SetWindowPos(hDlg, HWND_TOP, rcOwner.left + (widthOwner - widthW) / 2, rcOwner.top + 50, 0, 0, SWP_NOSIZE);	
+		msg = GetDlgItem(hDlg, IDC_TESTSETS);
+		sprintf(string, "%d", testRunCount);		// test count
+		SetWindowText(msg, string);
+		msg = GetDlgItem(hDlg, IDC_TESTSEED);
+		sprintf(string, "%d", setStart);			// default to next set
+		SetWindowText(msg, string);
+		msg = GetDlgItem(hDlg, IDC_TESTSTARTX);
+		sprintf(string, "%d", startX);
+		SetWindowText(msg, string);
+		msg = GetDlgItem(hDlg, IDC_TESTSTARTY);
+		sprintf(string, "%d", startY);
+		SetWindowText(msg, string);
+		CheckDlgButton(hDlg, IDC_TESTEXPERT, (width == 30 ? BST_CHECKED : BST_UNCHECKED));
+		CheckDlgButton(hDlg, IDC_TESTMEDIUM, (width == 16 ? BST_CHECKED : BST_UNCHECKED));
+		CheckDlgButton(hDlg, IDC_TESTSMALL, (width == 9 ? BST_CHECKED : BST_UNCHECKED));
+		CheckDlgButton(hDlg, IDC_TESTSETRESULTS, (saveSetResults ? BST_CHECKED : BST_UNCHECKED));
+		CheckDlgButton(hDlg, IDC_TESTSAVETIMING, (saveTiming ? BST_CHECKED : BST_UNCHECKED));
+		CheckDlgButton(hDlg, IDC_TESTSAVEINTERESTING, (saveInteresting ? BST_CHECKED : BST_UNCHECKED));
+		CheckDlgButton(hDlg, IDC_TESTSAVEGUESS0FAILS, (saveGuess0Fails ? BST_CHECKED : BST_UNCHECKED));
+		CheckDlgButton(hDlg, IDC_TESTSAVEGAMETREEFAILS, (saveGameTreeFails ? BST_CHECKED : BST_UNCHECKED));
+		CheckDlgButton(hDlg, IDC_TESTSAVESUPERLOCFAILS, (saveSuperLocFails ? BST_CHECKED : BST_UNCHECKED));
+		CheckDlgButton(hDlg, IDC_TESTSAVESUPERLOCTHRESHOLD, (saveSuperLocMultiplierChanges ? BST_CHECKED : BST_UNCHECKED));
+		return (INT_PTR)TRUE;
+
+	case WM_COMMAND:
+		if (LOWORD(wParam) == IDC_TESTEXPERT)
+		{
+			CheckDlgButton(hDlg, IDC_TESTEXPERT, BST_CHECKED);
+			CheckDlgButton(hDlg, IDC_TESTMEDIUM, BST_UNCHECKED);
+			CheckDlgButton(hDlg, IDC_TESTSMALL, BST_UNCHECKED);
+			msg = GetDlgItem(hDlg, IDC_TESTSTARTX);
+			sprintf(string, "%d", start30x16X);
+			SetWindowText(msg, string);
+			msg = GetDlgItem(hDlg, IDC_TESTSTARTY);
+			sprintf(string, "%d", start30x16Y);
+			SetWindowText(msg, string);
+			return (INT_PTR)TRUE;
+		}
+		if (LOWORD(wParam) == IDC_TESTMEDIUM)
+		{
+			CheckDlgButton(hDlg, IDC_TESTEXPERT, BST_UNCHECKED);
+			CheckDlgButton(hDlg, IDC_TESTMEDIUM, BST_CHECKED);
+			CheckDlgButton(hDlg, IDC_TESTSMALL, BST_UNCHECKED);
+			msg = GetDlgItem(hDlg, IDC_TESTSTARTX);
+			sprintf(string, "%d", start16x16X);
+			SetWindowText(msg, string);
+			msg = GetDlgItem(hDlg, IDC_TESTSTARTY);
+			sprintf(string, "%d", start16x16Y);
+			SetWindowText(msg, string);
+			return (INT_PTR)TRUE;
+		}
+		if (LOWORD(wParam) == IDC_TESTSMALL)
+		{
+			CheckDlgButton(hDlg, IDC_TESTEXPERT, BST_UNCHECKED);
+			CheckDlgButton(hDlg, IDC_TESTMEDIUM, BST_UNCHECKED);
+			CheckDlgButton(hDlg, IDC_TESTSMALL, BST_CHECKED);
+			msg = GetDlgItem(hDlg, IDC_TESTSTARTX);
+			sprintf(string, "%d", start9x9X);
+			SetWindowText(msg, string);
+			msg = GetDlgItem(hDlg, IDC_TESTSTARTY);
+			sprintf(string, "%d", start9x9Y);
+			SetWindowText(msg, string);
+			return (INT_PTR)TRUE;
+		}
+		if (LOWORD(wParam) == IDC_TESTSETRESULTS)
+		{
+			CheckDlgButton(hDlg, IDC_TESTSETRESULTS, (IsDlgButtonChecked(hDlg, IDC_TESTSETRESULTS) ? BST_UNCHECKED : BST_CHECKED));
+			return (INT_PTR)TRUE;
+		}
+		if (LOWORD(wParam) == IDC_TESTSAVETIMING)
+		{
+			CheckDlgButton(hDlg, IDC_TESTSAVETIMING, (IsDlgButtonChecked(hDlg, IDC_TESTSAVETIMING) ? BST_UNCHECKED : BST_CHECKED));
+			return (INT_PTR)TRUE;
+		}
+		if (LOWORD(wParam) == IDC_TESTSAVEINTERESTING)
+		{
+			CheckDlgButton(hDlg, IDC_TESTSAVEINTERESTING, (IsDlgButtonChecked(hDlg, IDC_TESTSAVEINTERESTING) ? BST_UNCHECKED : BST_CHECKED));
+			return (INT_PTR)TRUE;
+		}
+		if (LOWORD(wParam) == IDC_TESTSAVEGUESS0FAILS)
+		{
+			CheckDlgButton(hDlg, IDC_TESTSAVEGUESS0FAILS, (IsDlgButtonChecked(hDlg, IDC_TESTSAVEGUESS0FAILS) ? BST_UNCHECKED : BST_CHECKED));
+			return (INT_PTR)TRUE;
+		}
+		if (LOWORD(wParam) == IDC_TESTSAVEGAMETREEFAILS)
+		{
+			CheckDlgButton(hDlg, IDC_TESTSAVEGAMETREEFAILS, (IsDlgButtonChecked(hDlg, IDC_TESTSAVEGAMETREEFAILS) ? BST_UNCHECKED : BST_CHECKED));
+			return (INT_PTR)TRUE;
+		}
+		if (LOWORD(wParam) == IDC_TESTSAVESUPERLOCFAILS)
+		{
+			CheckDlgButton(hDlg, IDC_TESTSAVESUPERLOCFAILS, (IsDlgButtonChecked(hDlg, IDC_TESTSAVESUPERLOCFAILS) ? BST_UNCHECKED : BST_CHECKED));
+			return (INT_PTR)TRUE;
+		}
+		if (LOWORD(wParam) == IDC_TESTSAVESUPERLOCTHRESHOLD)
+		{
+			CheckDlgButton(hDlg, IDC_TESTSAVESUPERLOCTHRESHOLD, (IsDlgButtonChecked(hDlg, IDC_TESTSAVESUPERLOCTHRESHOLD) ? BST_UNCHECKED : BST_CHECKED));
+			return (INT_PTR)TRUE;
+		}
 		if (LOWORD(wParam) == IDOK)
 		{
+			if (IsDlgButtonChecked(hDlg, IDC_TESTEXPERT))
+			{
+				width = 30;
+				height = 16;
+				minesStart = 99;				
+			}
+			else if (IsDlgButtonChecked(hDlg, IDC_TESTMEDIUM))
+			{
+				width = 16;
+				height = 16;
+				minesStart = 40;
+			}
+			else 
+			{
+				width = 9;
+				height = 9;
+				minesStart = 10;
+			}
+			if (IsDlgButtonChecked(hDlg, IDC_TESTSETRESULTS))
+				saveSetResults = true;
+			else
+				saveSetResults = false;
+			if (IsDlgButtonChecked(hDlg, IDC_TESTSAVETIMING))
+				saveTiming = true;
+			else
+				saveTiming = false;
+			if (IsDlgButtonChecked(hDlg, IDC_TESTSAVEINTERESTING))
+				saveInteresting = true;
+			else
+				saveInteresting = false;
+			if (IsDlgButtonChecked(hDlg, IDC_TESTSAVEGUESS0FAILS))
+				saveGuess0Fails = true;
+			else
+				saveGuess0Fails = false;
+			if (IsDlgButtonChecked(hDlg, IDC_TESTSAVEGAMETREEFAILS))
+				saveGameTreeFails = true;
+			else
+				saveGameTreeFails = false;
+			if (IsDlgButtonChecked(hDlg, IDC_TESTSAVESUPERLOCFAILS))
+				saveSuperLocFails = true;
+			else
+				saveSuperLocFails = false;
+			if (IsDlgButtonChecked(hDlg, IDC_TESTSAVESUPERLOCTHRESHOLD))
+				saveSuperLocMultiplierChanges = true;
+			else
+				saveSuperLocMultiplierChanges = false;
+			msg = GetDlgItem(hDlg, IDC_TESTSETS);
+			GetWindowText(msg, string, sizeof(string));
+			testRunCount = setEnd = atoi(string);		
+			msg = GetDlgItem(hDlg, IDC_TESTSEED);
+			int base = 10;
+			GetWindowText(msg, string, sizeof(string));
+			if (string[0] == '0' && string[1] == 'x')
+				base = 16;
+			seed = strtoull(string, NULL, base);
+			msg = GetDlgItem(hDlg, IDC_TESTSTARTX);
+			GetWindowText(msg, string, sizeof(string));
+			startX = (U32)atoi(string);
+			if (startX < 0)
+				startX = 0;
+			else if (startX >= width)
+				startX = width - 1;
+			msg = GetDlgItem(hDlg, IDC_TESTSTARTY);
+			GetWindowText(msg, string, sizeof(string));
+			startY = (U32)atoi(string);
+			if (startY < 0)
+				startY = 0;
+			else if (startY >= height)
+				startY = height - 1;
 			EndDialog(hDlg, LOWORD(wParam));
 			return (INT_PTR)TRUE;
 		}
 		else if (LOWORD(wParam) == IDCANCEL)
 		{
-			ClearTotalStats();
+			setEnd = 0;
 			EndDialog(hDlg, LOWORD(wParam));
 			return (INT_PTR)TRUE;
 		}
@@ -826,7 +907,7 @@ INT_PTR CALLBACK GetRandomSeed(HWND hDlg, UINT message, WPARAM wParam, LPARAM lP
 	RECT rcOwner, rcWindow;
 	int width, widthOwner;
 	HWND msg;
-	char string[16];
+	char string[32];
 
 	switch (message)
 	{
@@ -845,9 +926,12 @@ INT_PTR CALLBACK GetRandomSeed(HWND hDlg, UINT message, WPARAM wParam, LPARAM lP
 	case WM_COMMAND:
 		if (LOWORD(wParam) == IDOK)
 		{
+			int base = 10;
 			msg = GetDlgItem(hDlg, IDC_RANDOMSEED);
 			GetWindowText(msg, string, sizeof(string));
-			seed = (U32)atoi(string);
+			if (string[0] == '0' && string[1] == 'x')
+				base = 16;
+			seed = strtoull(string, NULL, base);
 			EndDialog(hDlg, LOWORD(wParam));
 			return (INT_PTR)TRUE;
 		}
@@ -863,7 +947,7 @@ INT_PTR CALLBACK GetRandomSeed(HWND hDlg, UINT message, WPARAM wParam, LPARAM lP
 
 
 // Message handler for getting the starting position
-INT_PTR CALLBACK GetStartingPos(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam)
+INT_PTR CALLBACK GetThreshold(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam)
 {
 	UNREFERENCED_PARAMETER(lParam);
 	HWND hwndOwner;
@@ -882,31 +966,79 @@ INT_PTR CALLBACK GetStartingPos(HWND hDlg, UINT message, WPARAM wParam, LPARAM l
 		GetWindowRect(hDlg, &rcWindow);
 		widthW = rcWindow.right - rcWindow.left;
 		SetWindowPos(hDlg, HWND_TOP, rcOwner.left + (widthOwner - widthW) / 2, rcOwner.top + 50, 0, 0, SWP_NOSIZE);
-		msg = GetDlgItem(hDlg, IDC_STARTX);
-		sprintf(string, "%d", startX);
+		msg = GetDlgItem(hDlg, IDC_THRESHOLD);
+		sprintf(string, "%.3f", guessThreshold);
 		SetWindowText(msg, string);
-		msg = GetDlgItem(hDlg, IDC_STARTY);
-		sprintf(string, "%d", startY);
+		CheckDlgButton(hDlg, IDC_USEJARSUPERLOCMETHOD, (useNewSuperLocMethod < 0 ? BST_CHECKED : BST_UNCHECKED));
+		CheckDlgButton(hDlg, IDC_USEOLDSUPERLOCMETHOD, (useNewSuperLocMethod == 0 ? BST_CHECKED : BST_UNCHECKED));
+		CheckDlgButton(hDlg, IDC_USENEWSUPERLOCMETHOD, (useNewSuperLocMethod > 0 ? BST_CHECKED : BST_UNCHECKED));
+		CheckDlgButton(hDlg, IDC_USESUPERLOCTHRESHOLD, (useSuperLocMultiplier ? BST_CHECKED : BST_UNCHECKED));
+		CheckDlgButton(hDlg, IDC_TESTTOPTOBOTTOM, (topToBottomPriority  ? BST_CHECKED : BST_UNCHECKED));
+		CheckDlgButton(hDlg, IDC_TESTLEFTTORIGHT, (!topToBottomPriority ? BST_CHECKED : BST_UNCHECKED));
+		msg = GetDlgItem(hDlg, IDC_MULIPLIER);
+		sprintf(string, "%.1f", clearMultiplier);
 		SetWindowText(msg, string);
 		return (INT_PTR)TRUE;
 
 	case WM_COMMAND:
+		if (LOWORD(wParam) == IDC_USEJARSUPERLOCMETHOD)
+		{
+			useNewSuperLocMethod = -1;
+			CheckDlgButton(hDlg, IDC_USEJARSUPERLOCMETHOD, BST_CHECKED);
+			CheckDlgButton(hDlg, IDC_USEOLDSUPERLOCMETHOD, BST_UNCHECKED);
+			CheckDlgButton(hDlg, IDC_USENEWSUPERLOCMETHOD, BST_UNCHECKED);
+			return (INT_PTR)TRUE;
+		}
+		if (LOWORD(wParam) == IDC_USEOLDSUPERLOCMETHOD)
+		{
+			useNewSuperLocMethod = 0;
+			CheckDlgButton(hDlg, IDC_USEJARSUPERLOCMETHOD, BST_UNCHECKED);
+			CheckDlgButton(hDlg, IDC_USEOLDSUPERLOCMETHOD, BST_CHECKED);
+			CheckDlgButton(hDlg, IDC_USENEWSUPERLOCMETHOD, BST_UNCHECKED);
+			return (INT_PTR)TRUE;
+		}
+		if (LOWORD(wParam) == IDC_USENEWSUPERLOCMETHOD)
+		{
+			useNewSuperLocMethod = 1;
+			CheckDlgButton(hDlg, IDC_USEJARSUPERLOCMETHOD, BST_UNCHECKED);
+			CheckDlgButton(hDlg, IDC_USEOLDSUPERLOCMETHOD, BST_UNCHECKED);
+			CheckDlgButton(hDlg, IDC_USENEWSUPERLOCMETHOD, BST_CHECKED);
+			return (INT_PTR)TRUE;
+		}
+		if (LOWORD(wParam) == IDC_USESUPERLOCTHRESHOLD)
+		{
+			useSuperLocMultiplier = !useSuperLocMultiplier;
+			CheckDlgButton(hDlg, IDC_USESUPERLOCTHRESHOLD, (useSuperLocMultiplier ? BST_CHECKED : BST_UNCHECKED));
+			return (INT_PTR)TRUE;
+		}
+		if (LOWORD(wParam) == IDC_TESTTOPTOBOTTOM)
+		{
+			topToBottomPriority = true;
+			CheckDlgButton(hDlg, IDC_TESTTOPTOBOTTOM, (topToBottomPriority ? BST_CHECKED : BST_UNCHECKED));
+			CheckDlgButton(hDlg, IDC_TESTLEFTTORIGHT, (!topToBottomPriority ? BST_CHECKED : BST_UNCHECKED));
+			return (INT_PTR)TRUE;
+		}
+		if (LOWORD(wParam) == IDC_TESTLEFTTORIGHT)
+		{
+			topToBottomPriority = false;
+			CheckDlgButton(hDlg, IDC_TESTTOPTOBOTTOM, (topToBottomPriority ? BST_CHECKED : BST_UNCHECKED));
+			CheckDlgButton(hDlg, IDC_TESTLEFTTORIGHT, (!topToBottomPriority ? BST_CHECKED : BST_UNCHECKED));
+			return (INT_PTR)TRUE;
+		}
 		if (LOWORD(wParam) == IDOK)
 		{
-			msg = GetDlgItem(hDlg, IDC_STARTX);
+			msg = GetDlgItem(hDlg, IDC_THRESHOLD);
 			GetWindowText(msg, string, sizeof(string));
-			startX = (U32)atoi(string);
-			if (startX < 0)
-				startX = 0;
-			else if (startX >= width)
-				startX = width - 1;
-			msg = GetDlgItem(hDlg, IDC_STARTY);
+			guessThreshold = atof(string);
+			if (guessThreshold < 0.90)
+				guessThreshold = 0.90;
+			else if (guessThreshold >= 1,0)
+				guessThreshold = 1.0;
+			msg = GetDlgItem(hDlg, IDC_MULIPLIER);
 			GetWindowText(msg, string, sizeof(string));
-			startY = (U32)atoi(string);
-			if (startY < 0)
-				startY = 0;
-			else if (startY >= height)
-				startY = height - 1;
+			clearMultiplier = atof(string);
+			if (clearMultiplier < 0.0)
+				clearMultiplier = 0.0;
 			EndDialog(hDlg, LOWORD(wParam));
 			return (INT_PTR)TRUE;
 		}
@@ -921,8 +1053,8 @@ INT_PTR CALLBACK GetStartingPos(HWND hDlg, UINT message, WPARAM wParam, LPARAM l
 }
 
 
-// Message handler for getting endPlayCount
-INT_PTR CALLBACK GetEndPlayCount(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam)
+// Message handler for getting maxSolutions
+INT_PTR CALLBACK GetMaxSolutions(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam)
 {
 	UNREFERENCED_PARAMETER(lParam);
 	HWND hwndOwner;
@@ -941,70 +1073,21 @@ INT_PTR CALLBACK GetEndPlayCount(HWND hDlg, UINT message, WPARAM wParam, LPARAM 
 		GetWindowRect(hDlg, &rcWindow);
 		width = rcWindow.right - rcWindow.left;
 		SetWindowPos(hDlg, HWND_TOP, rcOwner.left + (widthOwner - width) / 2, rcOwner.top + 50, 0, 0, SWP_NOSIZE);
-		msg = GetDlgItem(hDlg, IDC_SETENDPLAY);
-		sprintf(string, "%d", endPlayCount);
+		msg = GetDlgItem(hDlg, IDC_SETMAXSOLUTIONS);
+		sprintf(string, "%d", maxSolutions);
 		SetWindowText(msg, string);
 		return (INT_PTR)TRUE;
 
 	case WM_COMMAND:
 		if (LOWORD(wParam) == IDOK)
 		{
-			msg = GetDlgItem(hDlg, IDC_SETENDPLAY);
+			msg = GetDlgItem(hDlg, IDC_SETMAXSOLUTIONS);
 			GetWindowText(msg, string, sizeof(string));
-			endPlayCount = (U32)atoi(string);
-			if (endPlayCount < 6)
-				endPlayCount = 6;
-			else if (endPlayCount > 30)
-				endPlayCount = 30;
-			EndDialog(hDlg, LOWORD(wParam));
-			return (INT_PTR)TRUE;
-		}
-		else if (LOWORD(wParam) == IDCANCEL)
-		{
-			EndDialog(hDlg, LOWORD(wParam));
-			return (INT_PTR)TRUE;
-		}
-		break;
-	}
-	return (INT_PTR)FALSE;
-}
-
-
-// Message handler for getting guess1Offset
-INT_PTR CALLBACK GetGuess1Offset(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam)
-{
-	UNREFERENCED_PARAMETER(lParam);
-	HWND hwndOwner;
-	RECT rcOwner, rcWindow;
-	int width, widthOwner;
-	HWND msg;
-	char string[16];
-
-	switch (message)
-	{
-	case WM_INITDIALOG:
-		if ((hwndOwner = GetParent(hDlg)) == NULL)
-			hwndOwner = GetDesktopWindow();
-		GetWindowRect(hwndOwner, &rcOwner);
-		widthOwner = rcOwner.right - rcOwner.left;
-		GetWindowRect(hDlg, &rcWindow);
-		width = rcWindow.right - rcWindow.left;
-		SetWindowPos(hDlg, HWND_TOP, rcOwner.left + (widthOwner - width) / 2, rcOwner.top + 50, 0, 0, SWP_NOSIZE);
-		msg = GetDlgItem(hDlg, IDC_SETGUESS1OFFSET);
-		sprintf(string, "%d", (int)(100 * guess1Offset));
-		SetWindowText(msg, string);
-		return (INT_PTR)TRUE;
-
-	case WM_COMMAND:
-		if (LOWORD(wParam) == IDOK)
-		{
-			msg = GetDlgItem(hDlg, IDC_SETGUESS1OFFSET);
-			GetWindowText(msg, string, sizeof(string));
-			guess1Offset = atoi(string) / 100.0;
-			if (guess1Offset < -.20)
-				guess1Offset = -.20;
-			else if (guess1Offset > .20)
-				guess1Offset = .20;
+			maxSolutions = (U32)atoi(string);
+			if (maxSolutions < SMALL_SOLUTIONS)
+				maxSolutions = SMALL_SOLUTIONS;
+			else if (maxSolutions > MAX_SOLUTIONS)
+				maxSolutions = MAX_SOLUTIONS;
 			EndDialog(hDlg, LOWORD(wParam));
 			return (INT_PTR)TRUE;
 		}
@@ -1065,7 +1148,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 {
 	char fname[MAX_PATH];
 	HMENU hMenu = GetMenu(hWnd);							
-	HMENU hSubMenu;
+	HMENU hSubMenu, hSubMenu2;
 
 	switch (message)
 	{
@@ -1075,54 +1158,96 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 		hBackgndSmall = LoadBitmap(GetModuleHandle(NULL), MAKEINTRESOURCE(IDB_BACKGNDSMALL));
 		hMine = LoadBitmap(GetModuleHandle(NULL), MAKEINTRESOURCE(IDB_MINE));
 		hNumbers = LoadBitmap(GetModuleHandle(NULL), MAKEINTRESOURCE(IDB_NUMBERS));
+		hDead = LoadBitmap(GetModuleHandle(NULL), MAKEINTRESOURCE(IDB_DEAD));
+		hSimilar = LoadBitmap(GetModuleHandle(NULL), MAKEINTRESOURCE(IDB_SIMILAR));
+		hSuper = LoadBitmap(GetModuleHandle(NULL), MAKEINTRESOURCE(IDB_SUPER));
+		hBest = LoadBitmap(GetModuleHandle(NULL), MAKEINTRESOURCE(IDB_BEST));
 		if (hBackgndExpert == NULL
 		|| hBackgndMedium == NULL
 		|| hBackgndSmall == NULL
 		|| hMine == NULL
-		|| hNumbers == NULL)
+		|| hNumbers == NULL
+		|| hDead == NULL
+		|| hSimilar == NULL
+		|| hSuper == NULL
+		|| hBest == NULL)
 			MessageBox(hWnd, "Could not load art!", "Error", MB_OK | MB_ICONEXCLAMATION);
 		RandomInit();										// init random numbers
 		hSubMenu = GetSubMenu(hMenu, SUBMENU_PLAY);
-//		for (int i = 0; i < MAX_RULES; i++)					// for all rules
-		for (int i = RULE_1; i < MAX_RULES; i++)
-		{
-			rules[i] = true;
-//			CheckMenuItem(hSubMenu, SUBMENU_RULES + i, MF_BYPOSITION | MF_CHECKED);	// for all rules
-			if (i >= GUESS_1)
-				CheckMenuItem(hSubMenu, SUBMENU_RULES + i - GUESS_1, MF_BYPOSITION | MF_CHECKED);
-		}
 		TimeInit();
-		guess1Offset = GUESS1_OFFSET;
-		endPlayCount = END_PLAY_COUNT;
+		HashInit();
+		maxSolutions = DEFAULT_SOLUTIONS;
+		ClearStats();
 		ClearTotalStats();
+		setStart = 1;
+		setEnd = 0;
+		bestx = -1;
+		guessThreshold = GUESS_THRESHOLD;
+		clearMultiplier = CLEAR_MULTIPLIER;
+		topToBottomPriority = true;
+		saveSetResults = false;		
+		saveTiming = false;
+		saveInteresting = false;
+		saveGuess0Fails = false;
+		saveGameTreeFails = false;
+		saveSuperLocFails = false;
+		saveSuperLocMultiplierChanges = false;
+		useNewSuperLocMethod = -1;						// default ot jar method
+		useSuperLocMultiplier = true;
+		hSubMenu = GetSubMenu(hMenu, SUBMENU_PLAY);
+		saveGameTreeResults = 0;
+		saveSuperLocResults = 0;				
+		hSubMenu = GetSubMenu(hMenu, SUBMENU_PLAY);
+		hSubMenu2 = GetSubMenu(hSubMenu, SUBSUBMENU_GAMETREE);
+		CheckMenuItem(hSubMenu2, saveGameTreeResults, MF_BYPOSITION | MF_CHECKED);
+		hSubMenu2 = GetSubMenu(hSubMenu, SUBSUBMENU_SUPERLOC);
+		CheckMenuItem(hSubMenu2, saveSuperLocResults, MF_BYPOSITION | MF_CHECKED);
+		testRunCount = 1;
 		testing = 0;
-		savePuzzles = false;
-		testStart = -1;
-		testEndPlay = -1;
-		testOffset = -1;
-		seed = 0;											// no seed set
+		seed = 0;										// no seed set
 		cheating = false;
-		startX = START_X;
-		startY = START_Y;
 		CheckMenuItem(hSubMenu, SUBMENU_CHEAT, MF_BYPOSITION | MF_UNCHECKED);
 		backup = false;
 		EnableMenuItem(hMenu, IDM_BACKUP, MF_BYCOMMAND | MF_GRAYED);
 		started = false;
 		width = MAX_WIDTH;
 		height = MAX_HEIGHT;
+		startX = start30x16X;
+		startY = start30x16Y;
 		minesStart = 99;
-		if (LoadGameFile() == false)						// load previous game if possible
+		listNext = 0;
+		if (LoadGameFile())								// load previous game if possible
+		{
+			if (width == 30)							// set default starting positions
+			{
+				startX = start30x16X;
+				startY = start30x16Y;
+			}
+			else if (width == 16)
+			{
+				startX = start16x16X;
+				startY = start16x16Y;
+			}
+			else
+			{
+				startX = start9x9X;
+				startY = start9x9Y;
+			}
+		}
+		else
 			NewGame(startX, startY);						// start new game
 		if (remainingCount == 0)
 		{
 			gameOver = true;
 			EnableMenuItem(hMenu, IDM_SAVE, MF_BYCOMMAND | MF_GRAYED);
 			EnableMenuItem(hMenu, IDM_SOLVE, MF_BYCOMMAND | MF_GRAYED);
+			EnableMenuItem(hMenu, IDM_AUTOMATIC, MF_BYCOMMAND | MF_GRAYED);
 			EnableMenuItem(hMenu, IDM_NEXTMOVE, MF_BYCOMMAND | MF_GRAYED);
 		}
 		else
 		{
 			EnableMenuItem(hMenu, IDM_SOLVE, MF_BYCOMMAND | MF_ENABLED);
+			EnableMenuItem(hMenu, IDM_AUTOMATIC, MF_BYCOMMAND | MF_ENABLED);
 			EnableMenuItem(hMenu, IDM_NEXTMOVE, MF_BYCOMMAND | MF_ENABLED);
 		}
 		break;
@@ -1133,7 +1258,10 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 			if (solving)									// not done wait until we are
 				break;
 			KillTimer(hWnd, IDT_TESTTIMER);
+NEXTSET:	saveSeed = Random2(0);
+			RandomSeed(saveSeed);
 			NewGame(startX, startY);						// start next puzzle
+			testTotal++;
 			solving = true;
 			while (solving && gameOver == false)
 			{
@@ -1146,43 +1274,27 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 			SaveResults(testResults);						// save results of the puzzle including errors
 			for (int i = 0; i < MAX_RULES; i++)
 				rulesCountTotal[i] += rulesCount[i];		// save totals
-			if (gameOver && remainingCount != 0)			// we encountered an error
-			{
-				BackUp();									// backup past error
-			}
-			if (savePuzzles)
-			{
-				sprintf(testFileName, "%s\\puzzle%d.txt", testFilePath, testing);
-				SavePuzzle(testFileName);
-			}
-			RedrawWindow(hWnd, NULL, NULL, RDW_INVALIDATE | RDW_UPDATENOW);
+			RedrawWindow(hWnd, &TestRect, NULL, RDW_INVALIDATE | RDW_UPDATENOW);
 			if (++testing <= testingMax)
 			{
-				SetTimer(hWnd, IDT_TESTTIMER, SPEED, (TIMERPROC)NULL);
+				goto NEXTSET;
 			}
 			else
 			{
-				ShowTotalResults(testResults, testingMax, saveSeed);	// save stats 
-				fclose(testResults);
-				testResults = NULL;
-				wins[seedsUsed] = winTotal;					// save wins for standard deviation calculation
-				if (testStart < 0
-				&& testEndPlay < 0
-				&& testOffset < 0)
-					SaveAllResults(testAllResults, saveSeed, seedsUsed, 0, saveSeed + 1 == lastSeed, (seedsUsed + 1) * 100);
-				else
-					SaveAllResults(testAllResults, saveSeed, -1, MAX_SEEDS * testingMax, seedsUsed == MAX_SEEDS - 1, testingAllTotal);
-				if (GetNextTest())							// set up for next test
+				ShowTestResults(testResults, testingMax, saveSeed);	// save stats 
+				SaveSetResults(testAllResults, setsUsed);	// save results of the current set
+				if (GetNextTest())							// set up for next set of tests
 				{
 					SetTimer(hWnd, IDT_TESTTIMER, SPEED, (TIMERPROC)NULL);
 					break;
 				}
+#if SHOW_GAMETREE_TIMES
+				fclose(gametreeTimes);
+				gametreeTimes = NULL;
+#endif
 				testing = 0;								// end testing
-				seed = saveSeed = 0;						// discard seed
 				startX = saveStartX;
 				startY = saveStartY;
-				guess1Offset = saveGuess1Offset;
-				endPlayCount = saveEndPlayCount;
 				if (testAllResults != NULL)
 					fclose(testAllResults);
 				testAllResults = NULL;
@@ -1190,11 +1302,13 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 				{
 					EnableMenuItem(hMenu, IDM_SAVE, MF_BYCOMMAND | MF_GRAYED);
 					EnableMenuItem(hMenu, IDM_SOLVE, MF_BYCOMMAND | MF_GRAYED);
+					EnableMenuItem(hMenu, IDM_AUTOMATIC, MF_BYCOMMAND | MF_GRAYED);
 					EnableMenuItem(hMenu, IDM_NEXTMOVE, MF_BYCOMMAND | MF_GRAYED);
 				}
 				else
 				{
 					EnableMenuItem(hMenu, IDM_SOLVE, MF_BYCOMMAND | MF_ENABLED);
+					EnableMenuItem(hMenu, IDM_AUTOMATIC, MF_BYCOMMAND | MF_ENABLED);
 					EnableMenuItem(hMenu, IDM_NEXTMOVE, MF_BYCOMMAND | MF_ENABLED);
 				}
 				if (backup)
@@ -1214,11 +1328,13 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 				{
 					EnableMenuItem(hMenu, IDM_SAVE, MF_BYCOMMAND | MF_GRAYED);
 					EnableMenuItem(hMenu, IDM_SOLVE, MF_BYCOMMAND | MF_GRAYED);
+					EnableMenuItem(hMenu, IDM_AUTOMATIC, MF_BYCOMMAND | MF_GRAYED);
 					EnableMenuItem(hMenu, IDM_NEXTMOVE, MF_BYCOMMAND | MF_GRAYED);
 				}
 				else
 				{
 					EnableMenuItem(hMenu, IDM_SOLVE, MF_BYCOMMAND | MF_ENABLED);
+					EnableMenuItem(hMenu, IDM_AUTOMATIC, MF_BYCOMMAND | MF_ENABLED);
 					EnableMenuItem(hMenu, IDM_NEXTMOVE, MF_BYCOMMAND | MF_ENABLED);
 				}
 				if (backup)
@@ -1233,6 +1349,9 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 	case WM_LBUTTONDOWN:
 		if (gameOver == false)
 		{
+			bestx = -1;									// turn off automatic detail
+			superNext = 0;								// no SuperLocArray entries
+			gameTreeNext = 0;							// no game tree entries		
 			int x, y;
 			if (FindPosition(hWnd, (int)(lParam & 0xffff), (int)(lParam >> 16), x, y))
 			{
@@ -1244,28 +1363,32 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 				else if (exposed[y][x] >= 0)			// do nothing if already exposed
 					break;
 				lastRuleUsed = -1;
-				lastProb = prob;
 				SaveBackUp();							// backup before exposing tile
 				Expose(x, y);							// expose it now
 				if (gameOver)
 				{
 					EnableMenuItem(hMenu, IDM_SAVE, MF_BYCOMMAND | MF_GRAYED);
 					EnableMenuItem(hMenu, IDM_SOLVE, MF_BYCOMMAND | MF_GRAYED);
+					EnableMenuItem(hMenu, IDM_AUTOMATIC, MF_BYCOMMAND | MF_GRAYED);
 					EnableMenuItem(hMenu, IDM_NEXTMOVE, MF_BYCOMMAND | MF_GRAYED);
 				}
 				else
 				{
 					EnableMenuItem(hMenu, IDM_SOLVE, MF_BYCOMMAND | MF_ENABLED);
+					EnableMenuItem(hMenu, IDM_AUTOMATIC, MF_BYCOMMAND | MF_ENABLED);
 					EnableMenuItem(hMenu, IDM_NEXTMOVE, MF_BYCOMMAND | MF_ENABLED);
 				}
 				EnableMenuItem(hMenu, IDM_BACKUP, MF_BYCOMMAND | MF_ENABLED);
-				RedrawWindow(hWnd, &Interior, NULL, RDW_INVALIDATE | RDW_UPDATENOW);
+				RedrawWindow(hWnd, NULL, NULL, RDW_INVALIDATE | RDW_UPDATENOW);
 			}
 		}
 		break;
 	case WM_RBUTTONDOWN:
 		if (gameOver == false)
 		{
+			bestx = -1;									// turn off automatic detail
+			superNext = 0;								// no SuperLocArray entries
+			gameTreeNext = 0;							// no game tree entries		
 			int x, y;
 			if (FindPosition(hWnd, (int)(lParam & 0xffff), (int)(lParam >> 16), x, y))
 			{
@@ -1280,11 +1403,10 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 				else if (exposed[y][x] < 0)
 				{
 					lastRuleUsed = -1;
-					lastProb = prob;
 					SaveBackUp();						// backup before exposing tile
 					mineCount--;
 					exposed[y][x] = EXPOSE_MINE;
-					RedrawWindow(hWnd, &Interior, NULL, RDW_INVALIDATE | RDW_UPDATENOW);
+					RedrawWindow(hWnd, NULL, NULL, RDW_INVALIDATE | RDW_UPDATENOW);
 				}
 				EnableMenuItem(hMenu, IDM_BACKUP, MF_BYCOMMAND | MF_ENABLED);
 			}
@@ -1302,6 +1424,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 				width = MAX_WIDTH;
 				height = MAX_HEIGHT;
 				minesStart = 99;
+				startX = start30x16X;
+				startY = start30x16Y;
 				goto NEW;
 			case IDM_NEW_MEDIUM:
 				if (testing)
@@ -1309,6 +1433,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 				width = 16;
 				height = 16;
 				minesStart = 40;
+				startX = start16x16X;
+				startY = start16x16Y;
 				goto NEW;
 			case IDM_NEW_SMALL:
 				if (testing)
@@ -1316,26 +1442,25 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 				width = 9;
 				height = 9;
 				minesStart = 10;
-NEW:			if (startX >= width							// reset starting position if now invalid
-				|| startY >= height)
-				{
-					startX = START_X;
-					startY = START_Y;
-				}
-				NewGame(startX, startY);					// start new game
-				EnableMenuItem(hMenu, IDM_SAVE, MF_BYCOMMAND | MF_ENABLED);		// enable save game now
+				startX = start9x9X;
+				startY = start9x9Y;
+NEW:			NewGame(startX, startY);					// start new game
 LOAD:			lastRuleUsed = -1;
+				listNext = 0;								// remove similar and dead 
+				EnableMenuItem(hMenu, IDM_SAVE, MF_BYCOMMAND | MF_ENABLED);		// enable save game now
 				seed = 0;									// clear seed
 				if (remainingCount == 0)
 				{
 					gameOver = true;
 					EnableMenuItem(hMenu, IDM_SAVE, MF_BYCOMMAND | MF_GRAYED);
 					EnableMenuItem(hMenu, IDM_SOLVE, MF_BYCOMMAND | MF_GRAYED);
+					EnableMenuItem(hMenu, IDM_AUTOMATIC, MF_BYCOMMAND | MF_GRAYED);
 					EnableMenuItem(hMenu, IDM_NEXTMOVE, MF_BYCOMMAND | MF_GRAYED);
 				}
 				else
 				{
 					EnableMenuItem(hMenu, IDM_SOLVE, MF_BYCOMMAND | MF_ENABLED);
+					EnableMenuItem(hMenu, IDM_AUTOMATIC, MF_BYCOMMAND | MF_ENABLED);
 					EnableMenuItem(hMenu, IDM_NEXTMOVE, MF_BYCOMMAND | MF_ENABLED);
 				}
 				EnableMenuItem(hMenu, IDM_BACKUP, MF_BYCOMMAND | MF_GRAYED);
@@ -1345,6 +1470,9 @@ LOAD:			lastRuleUsed = -1;
 				if (testing)
 					break;
 				solving = false;
+				automatic = false;
+				bestx = -1;
+				listNext = 0;							// do not draw automatic data
 				if (LoadFileName(hWnd, fname, "Text file", "txt"))
 				{
 					if (LoadPuzzle(fname))
@@ -1352,7 +1480,7 @@ LOAD:			lastRuleUsed = -1;
 					else
 					{
 						MessageBox(hWnd, "Could not load puzzle!", "Data Error", MB_OK | MB_ICONEXCLAMATION);
-						goto NEW;
+						goto NEW;						// minesStart, width and height not changed
 					}
 				}
 				break;
@@ -1365,9 +1493,14 @@ LOAD:			lastRuleUsed = -1;
 				fname[0] = 0;
 				if (SaveFileName(hWnd, fname, "Text file", "txt"))
 				{
-					SavePuzzle(fname);
+					SavePuzzle(fname, true);
 				}
 				break;
+			case IDM_AUTOMATIC:
+				if (testing)
+					break;
+				if (solving == false)
+					automatic = true;
 			case IDM_SOLVE:
 				if (testing)
 					break;
@@ -1399,6 +1532,27 @@ LOAD:			lastRuleUsed = -1;
 				if (started == false						// just in case
 				|| gameOver)
 					break;
+				if (saveGameTreeResults > 0)
+				{
+					char string[64];
+					sprintf(string, "gameTreeResult v%s.txt", VERSION);
+					gametreeResults = fopen(string, "w");
+				}
+				if (saveSuperLocResults > 0)
+				{
+					char string[64];
+					char * method;
+					if (useNewSuperLocMethod < 0)
+						method = "jar";
+					else if (useNewSuperLocMethod == 0)
+						method = "old";
+					else
+						method = "new";
+					sprintf(string, "superLocResults v%s %s%s.txt",
+						VERSION, method,
+						(useSuperLocMultiplier ? "+" : ""));
+					superLocResults = fopen(string, "w");
+				}
 				solving = true;								// stop game if we make a mistake
 				MakeMove();									// make some move
 				solving = false;
@@ -1406,18 +1560,30 @@ LOAD:			lastRuleUsed = -1;
 				{
 					EnableMenuItem(hMenu, IDM_SAVE, MF_BYCOMMAND | MF_GRAYED);
 					EnableMenuItem(hMenu, IDM_SOLVE, MF_BYCOMMAND | MF_GRAYED);
+					EnableMenuItem(hMenu, IDM_AUTOMATIC, MF_BYCOMMAND | MF_GRAYED);
 					EnableMenuItem(hMenu, IDM_NEXTMOVE, MF_BYCOMMAND | MF_GRAYED);
 				}
 				else
 				{
 					EnableMenuItem(hMenu, IDM_SOLVE, MF_BYCOMMAND | MF_ENABLED);
+					EnableMenuItem(hMenu, IDM_AUTOMATIC, MF_BYCOMMAND | MF_ENABLED);
 					EnableMenuItem(hMenu, IDM_NEXTMOVE, MF_BYCOMMAND | MF_ENABLED);
 				}
 				if (backup)
 					EnableMenuItem(hMenu, IDM_BACKUP, MF_BYCOMMAND | MF_ENABLED);
 				else
 					EnableMenuItem(hMenu, IDM_BACKUP, MF_BYCOMMAND | MF_GRAYED);
-				RedrawWindow(hWnd, &Interior, NULL, RDW_INVALIDATE | RDW_UPDATENOW);
+				RedrawWindow(hWnd, NULL, NULL, RDW_INVALIDATE | RDW_UPDATENOW);
+				if (gametreeResults != NULL)
+				{
+					fclose(gametreeResults);
+					gametreeResults = NULL;
+				}
+				if (superLocResults != NULL)
+				{
+					fclose(superLocResults);
+					superLocResults = NULL;
+				}
 				break;
 			case IDM_STATS:
 				DialogBox(hInst, MAKEINTRESOURCE(IDD_STATSBOX), hWnd, Statistics);
@@ -1428,54 +1594,35 @@ LOAD:			lastRuleUsed = -1;
 				if (seed != 0)
 					RandomSeed(seed);
 				break;
-			case IDM_STARTINGPOS:
-				DialogBox(hInst, MAKEINTRESOURCE(IDD_STARTINGPOSBOX), hWnd, GetStartingPos);
+			case IDM_SETTHRESHOLD:
+				DialogBox(hInst, MAKEINTRESOURCE(IDD_SETTHRESHOLDBOX), hWnd, GetThreshold);
 				break;
-			case IDM_SETENDPLAY:
-				DialogBox(hInst, MAKEINTRESOURCE(IDD_SETENDPLAYBOX), hWnd, GetEndPlayCount);
+			case IDM_SETMAXSOLUTIONS:
+				DialogBox(hInst, MAKEINTRESOURCE(IDD_SETMAXSOLUTIONSBOX), hWnd, GetMaxSolutions);
 				break;
-			case IDM_SETGUESS1OFFSET:
-				DialogBox(hInst, MAKEINTRESOURCE(IDD_SETGUESS1OFFSETBOX), hWnd, GetGuess1Offset);
-				break;
-			case IDM_SAVEPUZZLES:
-				savePuzzles = !savePuzzles;
-				hSubMenu = GetSubMenu(hMenu, SUBMENU_TEST);
-				if (savePuzzles)
-					CheckMenuItem(hSubMenu, SUBMENU_SAVEPUZZLES, MF_BYPOSITION | MF_CHECKED);
-				else
-					CheckMenuItem(hSubMenu, SUBMENU_SAVEPUZZLES, MF_BYPOSITION | MF_UNCHECKED);
-				break;
-			case IDM_TESTSTARTINGPOS:
-			case IDM_TESTENPLAYS:
-			case IDM_TESTGUESS1OFFSETS:
-			case IDM_TEST10:
-			case IDM_TEST100:
-			case IDM_TEST1000:
-			case IDM_TEST200x100:
-			case IDM_TEST1000x100:
+			case IDM_TESTRUN:
 				if (testing != 0)							// skip if testing progress	
 				{
 					testingMax = testing;					// stop current test
+					setEnd = setsUsed;
 					break;
 				}
+				DialogBox(hInst, MAKEINTRESOURCE(IDD_TESTRUNBOX), hWnd, GetTestParameters);
+				if (setEnd == 0)							// cancelled test
+					break;
+				setStart = (int)seed;						// reset starting set number
 				saveStartX = startX;
 				saveStartY = startY;
-				saveGuess1Offset = guess1Offset;
-				saveEndPlayCount = endPlayCount;
 				solving = false;							// turn off any solving
 				SetTestingFiles(wmId);						// set up test files and paths
-				if (testAllResults == NULL					// file open failed
-				&& (wmId == IDM_TEST200x100 || wmId == IDM_TEST1000x100))
+				if (testAllResults == NULL)					// file open failed
 				{
 					MessageBox(hWnd, "Could not open results file!", "Error", MB_OK | MB_ICONEXCLAMATION);
 					break;
 				}
+				ClearTotalStats();							// clear all total stats
+				saveSeed = seed;							// used later in the results file
 				StartTest();								// set up test files and start test
-				if (testResults == NULL)					// file open failed
-				{
-					MessageBox(hWnd, "Could not open results file!", "Error", MB_OK | MB_ICONEXCLAMATION);
-					break;
-				}
 				SetTimer(hWnd, IDT_TESTTIMER, SPEED, (TIMERPROC)NULL);
 				break;
 			case IDM_BACKUP:
@@ -1485,6 +1632,7 @@ LOAD:			lastRuleUsed = -1;
 				{
 					EnableMenuItem(hMenu, IDM_SAVE, MF_BYCOMMAND | MF_ENABLED);		// game over could be cleared
 					EnableMenuItem(hMenu, IDM_SOLVE, MF_BYCOMMAND | MF_ENABLED);
+					EnableMenuItem(hMenu, IDM_AUTOMATIC, MF_BYCOMMAND | MF_ENABLED);
 					EnableMenuItem(hMenu, IDM_NEXTMOVE, MF_BYCOMMAND | MF_ENABLED);
 					EnableMenuItem(hMenu, IDM_BACKUP, MF_BYCOMMAND | MF_GRAYED);
 					RedrawWindow(hWnd, NULL, NULL, RDW_INVALIDATE | RDW_UPDATENOW);
@@ -1493,6 +1641,7 @@ LOAD:			lastRuleUsed = -1;
 			case IDM_HFLIP:
 				if (testing)
 					break;
+				listNext = 0;								// turn off dead, similar and super
 				for (int y = 0; y < height; y++)
 				{
 					for (int x = 0; x < width/2; x++)
@@ -1513,6 +1662,7 @@ LOAD:			lastRuleUsed = -1;
 			case IDM_VFLIP:
 				if (testing)
 					break;
+				listNext = 0;								// turn off dead, similar and super
 				for (int y = 0; y < height/2; y++)
 				{
 					for (int x = 0; x < width; x++)
@@ -1539,26 +1689,25 @@ LOAD:			lastRuleUsed = -1;
 					CheckMenuItem(hSubMenu, SUBMENU_CHEAT, MF_BYPOSITION | MF_UNCHECKED);
 				RedrawWindow(hWnd, NULL, NULL, RDW_INVALIDATE | RDW_UPDATENOW);
 				break;
-			case IDM_RULE1:
-			case IDM_RULE2:
-			case IDM_RULE3:
-			case IDM_RULE4:
-			case IDM_RULE5:
-			case IDM_RULE6:
-			case IDM_RULE7:
-			case IDM_RULE8:
-			case IDM_RULE9:
-			case IDM_RULE10:
-			case IDM_GUESS1:
-			case IDM_GUESS2:
-				rules[wmId - IDM_RULE1] = !rules[wmId - IDM_RULE1];
+			case IDM_ANALYZEGAMETREE0:
+			case IDM_ANALYZEGAMETREE1:
+			case IDM_ANALYZEGAMETREE2:
+			case IDM_ANALYZEGAMETREE3:
 				hSubMenu = GetSubMenu(hMenu, SUBMENU_PLAY);
-				if (rules[wmId - IDM_RULE1])
-//					CheckMenuItem(hSubMenu, SUBMENU_RULES + wmId - IDM_RULE1, MF_BYPOSITION | MF_CHECKED);
-					CheckMenuItem(hSubMenu, SUBMENU_RULES + wmId - IDM_GUESS1, MF_BYPOSITION | MF_CHECKED);
-				else
-//					CheckMenuItem(hSubMenu, SUBMENU_RULES + wmId - IDM_RULE1, MF_BYPOSITION | MF_UNCHECKED);
-					CheckMenuItem(hSubMenu, SUBMENU_RULES + wmId - IDM_GUESS1, MF_BYPOSITION | MF_UNCHECKED);
+				hSubMenu2 = GetSubMenu(hSubMenu, SUBSUBMENU_GAMETREE);
+				CheckMenuItem(hSubMenu2, saveGameTreeResults, MF_BYPOSITION | MF_UNCHECKED);
+				saveGameTreeResults = wmId - IDM_ANALYZEGAMETREE0;
+				CheckMenuItem(hSubMenu2, saveGameTreeResults, MF_BYPOSITION | MF_CHECKED);
+				break;
+			case IDM_ANALYZESUPERLOC0:
+			case IDM_ANALYZESUPERLOC1:
+			case IDM_ANALYZESUPERLOC2:
+			case IDM_ANALYZESUPERLOC3:
+				hSubMenu = GetSubMenu(hMenu, SUBMENU_PLAY);
+				hSubMenu2 = GetSubMenu(hSubMenu, SUBSUBMENU_SUPERLOC);
+				CheckMenuItem(hSubMenu2, saveSuperLocResults, MF_BYPOSITION | MF_UNCHECKED);
+				saveSuperLocResults = wmId - IDM_ANALYZESUPERLOC0;
+				CheckMenuItem(hSubMenu2, saveSuperLocResults, MF_BYPOSITION | MF_CHECKED);
 				break;
 			case IDM_EXIT:
 				DestroyWindow(hWnd);
@@ -1587,6 +1736,15 @@ LOAD:			lastRuleUsed = -1;
 		if (testAllResults != NULL)
 			fclose(testAllResults);
 		testAllResults = NULL;
+		if (gametreeResults != NULL)
+			fclose(gametreeResults);
+		gametreeResults = NULL;
+		if (superLocResults != NULL)
+			fclose(superLocResults);
+		superLocResults = NULL;
+		if (gametreeTimes != NULL)
+			fclose(gametreeTimes);
+		gametreeTimes = NULL;
 		if (gameOver == false)
 			SaveGameFile();
 		DeleteObject(hBackgndExpert);
@@ -1594,6 +1752,10 @@ LOAD:			lastRuleUsed = -1;
 		DeleteObject(hBackgndSmall);
 		DeleteObject(hMine);
 		DeleteObject(hNumbers);
+		DeleteObject(hDead);
+		DeleteObject(hSimilar);
+		DeleteObject(hSuper);
+		DeleteObject(hBest);
 		PostQuitMessage(0);
 		break;
 	default:

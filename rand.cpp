@@ -19,46 +19,78 @@
 //	values then let the user choose none, one, two, ..., or all
 //	of x, y, z, and c to be reseeded.
 //
-static U64 kiss64_x = 1234567890987654321ULL;
-static U64 kiss64_c = 123456123456123456ULL;
-static U64 kiss64_y = 362436362436362436ULL;
-static U64 kiss64_z = 1066149217761810ULL;
-static U64 kiss64_t = 0;
+static U64 kiss_x = 1234567890987654321ULL;
+static U64 kiss_c = 123456123456123456ULL;
+static U64 kiss_y = 362436362436362436ULL;
+static U64 kiss_z = 1066149217761810ULL;
+static U64 kiss_t = 0;
+
+static U64 kiss2_x = 1234567890987654321ULL;
+static U64 kiss2_c = 123456123456123456ULL;
+static U64 kiss2_y = 362436362436362436ULL;
+static U64 kiss2_z = 1066149217761810ULL;
+static U64 kiss2_t = 0;
+
 
 void RandomSeed(U64 seed)
 {
-	kiss64_x = seed | 1;
-	kiss64_c = seed | 2;
-	kiss64_y = seed | 4;
-	kiss64_z = seed | 8;
-	kiss64_t = 0;
+	kiss_x = seed | 1;
+	kiss_c = seed | 2;
+	kiss_y = seed | 4;
+	kiss_z = seed | 8;
+	kiss_t = 0;
 }
 
 
-//
-//	Warning: Using the method below slightly biases the results near 0.
-//	For example suppose U32 were only returning 0-31, then with in = 30
-//	we would get two 0 and 1 but only 1 of the other results.
-//	But with U64 we would get a slight bias in the range of 1 out of 2^59.
-//
+void RandomSeed2(U64 seed)
+{
+	kiss2_x = seed | 1;
+	kiss2_c = seed | 2;
+	kiss2_y = seed | 4;
+	kiss2_z = seed | 8;
+	kiss2_t = 0;
+}
+
+
 U64 Random(U32 in)
 {
 	// multiply with carry
-	kiss64_t = (kiss64_x << 58) + kiss64_c;
-	kiss64_c = (kiss64_x >> 6);
-	kiss64_x += kiss64_t;
-	kiss64_c += (kiss64_x < kiss64_t);
+	kiss_t = (kiss_x << 58) + kiss_c;
+	kiss_c = (kiss_x >> 6);
+	kiss_x += kiss_t;
+	kiss_c += (kiss_x < kiss_t ? 1 : 0);
 	// XOR shift
-	kiss64_y ^= (kiss64_y << 13);
-	kiss64_y ^= (kiss64_y >> 17);
-	kiss64_y ^= (kiss64_y << 43);
+	kiss_y ^= (kiss_y << 13);
+	kiss_y ^= (kiss_y >> 17);
+	kiss_y ^= (kiss_y << 43);
 	// Congruential
-	kiss64_z = 6906969069LL * kiss64_z + 1234567;
-	U64 rand = kiss64_x + kiss64_y + kiss64_z;
+	kiss_z = 6906969069LL * kiss_z + 1234567;
+	U64 rand = kiss_x + kiss_y + kiss_z;
 	if (in == 0)
 		return rand;
 	else
-		return rand % in;
+		return ((rand & 0xFFFFFFFF) * in) >> 32;
+}
+
+
+U64 Random2(U32 in)
+{
+	// multiply with carry
+	kiss2_t = (kiss2_x << 58) + kiss2_c;
+	kiss2_c = (kiss2_x >> 6);
+	kiss2_x += kiss2_t;
+	kiss2_c += (kiss2_x < kiss2_t ? 1 : 0);
+	// XOR shift
+	kiss2_y ^= (kiss2_y << 13);
+	kiss2_y ^= (kiss2_y >> 17);
+	kiss2_y ^= (kiss2_y << 43);
+	// Congruential
+	kiss2_z = 6906969069LL * kiss2_z + 1234567;
+	U64 rand = kiss2_x + kiss2_y + kiss2_z;
+	if (in == 0)
+		return rand;
+	else
+		return ((rand & 0xFFFFFFFF) * in) >> 32;
 }
 
 
@@ -91,5 +123,6 @@ void	RandomInit(void)
 	C_aux = GetTickCount();
 	C_z += C_aux;
 	RandomSeed((U64)C_z);
+	RandomSeed2((U64)C_z);
 }
 
